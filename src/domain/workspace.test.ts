@@ -8,6 +8,21 @@ const asset = (id: string, x: number, y: number, width = 100, height = 60): Asse
 });
 
 describe("Canvas workspace", () => {
+  it("creates, renames, and switches between named Canvases", () => {
+    const workspace = createWorkspace();
+    const firstId = workspace.getState().canvas.id;
+
+    workspace.renameCanvas("YouTube thumbnails");
+    const second = workspace.createCanvas("Ideas");
+
+    expect(workspace.getState().canvas.id).toBe(second.canvas.id);
+    expect(workspace.getCanvases().map((canvas) => canvas.name)).toEqual(["YouTube thumbnails", "Ideas"]);
+
+    workspace.switchCanvas(firstId);
+    expect(workspace.getState().canvas.name).toBe("YouTube thumbnails");
+    expect(workspace.getDocument().canvases).toHaveLength(2);
+  });
+
   it("selects assets intersecting a marquee rectangle", () => {
     const workspace = createWorkspace({ ...createInitialState(), assets: [asset("a", 10, 10), asset("b", 300, 300)] });
     workspace.dispatch({ type: "select-rect", rect: { x: 0, y: 0, width: 150, height: 120 } });

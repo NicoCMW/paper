@@ -1,7 +1,10 @@
-import type { Asset, Board, CanvasState, EntityId, Rect, Workspace, WorkspaceCommand } from "./model";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
 import { createInitialState } from "./model";
 
-type Snapshot = CanvasState;
+type CanvasHistory = {
+  past: CanvasState[];
+  future: CanvasState[];
+};
 
 const clone = <T>(value: T): T => structuredClone(value);
 
@@ -40,8 +43,6 @@ const selectIntersecting = (state: CanvasState, rect: Rect, additive: boolean): 
 
 function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasState {
   switch (command.type) {
-    case "create-canvas":
-      return createInitialState(command.canvas);
     case "import-asset":
       return { ...previous, assets: [...previous.assets, command.asset], selection: [command.asset.id] };
     case "select": {
@@ -201,41 +202,106 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
   }
 }
 
-export function createWorkspace(initial: CanvasState = createInitialState()): Workspace {
-  let state = clone(initial);
-  let past: Snapshot[] = [];
-  let future: Snapshot[] = [];
+const documentFrom = (initial: CanvasState | WorkspaceDocument): WorkspaceDocument => {
+  if ("canvases" in initial) {
+    const canvases = initial.canvases.length > 0 ? initial.canvases : [createInitialState()];
+    const activeCanvasId = canvases.some((canvas) => canvas.canvas.id === initial.activeCanvasId)
+      ? initial.activeCanvasId
+      : canvases[0].canvas.id;
+    return clone({ activeCanvasId, canvases });
+  }
+  return { activeCanvasId: initial.canvas.id, canvases: [clone(initial)] };
+};
 
-  const commit = (next: CanvasState): CanvasState => {
-    if (JSON.stringify(next) === JSON.stringify(state)) return state;
-    past = [...past, clone(state)];
-    future = [];
-    state = clone(next);
-    return clone(state);
+const activeCanvas = (document: WorkspaceDocument): CanvasState => {
+  return document.canvases.find((canvas) => canvas.canvas.id === document.activeCanvasId) ?? document.canvases[0];
+};
+
+const withActiveCanvas = (document: WorkspaceDocument, next: CanvasState): WorkspaceDocument => ({
+  ...document,
+  canvases: document.canvases.map((canvas) => canvas.canvas.id === next.canvas.id ? clone(next) : canvas),
+});
+
+const summariesOf = (document: WorkspaceDocument): CanvasSummary[] => document.canvases.map((canvas) => ({
+  ...canvas.canvas,
+  assetCount: canvas.assets.length,
+  boardCount: canvas.boards.length,
+}));
+
+export function createWorkspace(initial: CanvasState | WorkspaceDocument = createInitialState()): Workspace {
+  let document = documentFrom(initial);
+  const histories = new Map<EntityId, CanvasHistory>();
+
+  const historyFor = (canvasId: EntityId): CanvasHistory => {
+    const existing = histories.get(canvasId);
+    if (existing) return existing;
+    const created: CanvasHistory = { past: [], future: [] };
+    histories.set(canvasId, created);
+    return created;
+  };
+
+  const commit = (next: WorkspaceDocument): CanvasState => {
+    if (JSON.stringify(next) === JSON.stringify(document)) return clone(activeCanvas(document));
+    const current = activeCanvas(document);
+    const nextActive = activeCanvas(next);
+    if (document.activeCanvasId === next.activeCanvasId && current.canvas.id === nextActive.canvas.id) {
+      const history = historyFor(current.canvas.id);
+      history.past = [...history.past, clone(current)];
+      history.future = [];
+    }
+    document = clone(next);
+    return clone(activeCanvas(document));
   };
 
   return {
-    getState: () => clone(state),
+    getState: () => clone(activeCanvas(document)),
+    getDocument: () => clone(document),
+    getCanvases: () => summariesOf(document),
     dispatch: (command) => {
+      const current = activeCanvas(document);
+      const next = applyCommand(current, command);
+      const nextDocument = withActiveCanvas(document, next);
       if (command.type === "select" || command.type === "select-rect") {
-        state = clone(applyCommand(state, command));
-        return clone(state);
+        document = clone(nextDocument);
+        return clone(next);
       }
-      return commit(applyCommand(state, command));
+      return commit(nextDocument);
+    },
+    createCanvas: (name) => {
+      const title = name.trim() || `Canvas ${document.canvases.length + 1}`;
+      const canvas = createInitialState({ id: crypto.randomUUID(), name: title });
+      document = { activeCanvasId: canvas.canvas.id, canvases: [...document.canvases, canvas] };
+      return clone(canvas);
+    },
+    switchCanvas: (id) => {
+      if (!document.canvases.some((canvas) => canvas.canvas.id === id)) return clone(activeCanvas(document));
+      document = { ...document, activeCanvasId: id };
+      return clone(activeCanvas(document));
+    },
+    renameCanvas: (name) => {
+      const current = activeCanvas(document);
+      const title = name.trim() || current.canvas.name;
+      const next = { ...current, canvas: { ...current.canvas, name: title } };
+      document = withActiveCanvas(document, next);
+      return clone(next);
     },
     undo: () => {
-      const previous = past.pop();
-      if (!previous) return clone(state);
-      future = [clone(state), ...future];
-      state = previous;
-      return clone(state);
+      const current = activeCanvas(document);
+      const history = historyFor(current.canvas.id);
+      const previous = history.past.pop();
+      if (!previous) return clone(activeCanvas(document));
+      history.future = [clone(current), ...history.future];
+      document = withActiveCanvas(document, previous);
+      return clone(activeCanvas(document));
     },
     redo: () => {
-      const next = future.shift();
-      if (!next) return clone(state);
-      past = [...past, clone(state)];
-      state = next;
-      return clone(state);
+      const current = activeCanvas(document);
+      const history = historyFor(current.canvas.id);
+      const next = history.future.shift();
+      if (!next) return clone(activeCanvas(document));
+      history.past = [...history.past, clone(current)];
+      document = withActiveCanvas(document, next);
+      return clone(activeCanvas(document));
     },
   };
 }

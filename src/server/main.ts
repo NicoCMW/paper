@@ -42,10 +42,29 @@ const server = createServer(async (request, response) => {
     const url = requestUrl(request);
     if (request.method === "OPTIONS") { response.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET,POST,OPTIONS" }); return response.end(); }
     if (url.pathname === "/api/state" && request.method === "GET") return sendJson(response, 200, workspace.getState());
+    if (url.pathname === "/api/canvases" && request.method === "GET") return sendJson(response, 200, workspace.getCanvases());
+    if (url.pathname === "/api/canvas/create" && request.method === "POST") {
+      const body = await readJson(request);
+      const next = workspace.createCanvas(String(body.name ?? ""));
+      await store.save(workspace.getDocument());
+      return sendJson(response, 200, { state: next, canvases: workspace.getCanvases() });
+    }
+    if (url.pathname === "/api/canvas/switch" && request.method === "POST") {
+      const body = await readJson(request);
+      const next = workspace.switchCanvas(String(body.id ?? ""));
+      await store.save(workspace.getDocument());
+      return sendJson(response, 200, { state: next, canvases: workspace.getCanvases() });
+    }
+    if (url.pathname === "/api/canvas/rename" && request.method === "POST") {
+      const body = await readJson(request);
+      const next = workspace.renameCanvas(String(body.name ?? ""));
+      await store.save(workspace.getDocument());
+      return sendJson(response, 200, { state: next, canvases: workspace.getCanvases() });
+    }
     if (url.pathname === "/api/dispatch" && request.method === "POST") {
       const body = await readJson(request);
       const next = workspace.dispatch(body.command as Parameters<typeof workspace.dispatch>[0]);
-      await store.save(next);
+      await store.save(workspace.getDocument());
       return sendJson(response, 200, next);
     }
     if (url.pathname === "/api/import" && request.method === "POST") {
@@ -55,11 +74,11 @@ const server = createServer(async (request, response) => {
       const saved = await store.saveDataUrl(dataUrl, filename);
       const asset: Asset = { id: crypto.randomUUID(), name: filename, mime: saved.mime, path: saved.relativePath, x: Number(body.x ?? 80), y: Number(body.y ?? 80), width: Number(body.width ?? 640), height: Number(body.height ?? 360), origin: "imported", createdAt: new Date().toISOString() };
       const next = workspace.dispatch({ type: "import-asset", asset });
-      await store.save(next);
+      await store.save(workspace.getDocument());
       return sendJson(response, 200, next);
     }
-    if (url.pathname === "/api/undo" && request.method === "POST") { const next = workspace.undo(); await store.save(next); return sendJson(response, 200, next); }
-    if (url.pathname === "/api/redo" && request.method === "POST") { const next = workspace.redo(); await store.save(next); return sendJson(response, 200, next); }
+    if (url.pathname === "/api/undo" && request.method === "POST") { const next = workspace.undo(); await store.save(workspace.getDocument()); return sendJson(response, 200, next); }
+    if (url.pathname === "/api/redo" && request.method === "POST") { const next = workspace.redo(); await store.save(workspace.getDocument()); return sendJson(response, 200, next); }
     if (url.pathname === "/mcp" && request.method === "GET") {
       response.writeHead(405, { Allow: "POST", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
       return response.end();

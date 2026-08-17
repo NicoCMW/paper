@@ -1,6 +1,6 @@
 import { mkdir, readFile, writeFile, copyFile } from "node:fs/promises";
 import { dirname, extname, join, normalize, relative, resolve } from "node:path";
-import type { CanvasState } from "../domain/model";
+import type { CanvasState, WorkspaceDocument } from "../domain/model";
 import { createInitialState } from "../domain/model";
 
 const DATA_DIR = process.env.PAPER_DATA_DIR
@@ -10,19 +10,23 @@ const ASSETS_DIR = join(DATA_DIR, "assets");
 const STATE_PATH = join(DATA_DIR, "state.json");
 
 export class LocalWorkspaceStore {
-  async load(): Promise<CanvasState> {
+  async load(): Promise<WorkspaceDocument> {
     try {
-      return JSON.parse(await readFile(STATE_PATH, "utf8")) as CanvasState;
+      const parsed = JSON.parse(await readFile(STATE_PATH, "utf8")) as CanvasState | WorkspaceDocument;
+      if ("canvases" in parsed && Array.isArray(parsed.canvases)) return parsed;
+      const legacy = parsed as CanvasState;
+      return { activeCanvasId: legacy.canvas.id, canvases: [legacy] };
     } catch {
       const initial = createInitialState();
-      await this.save(initial);
-      return initial;
+      const document: WorkspaceDocument = { activeCanvasId: initial.canvas.id, canvases: [initial] };
+      await this.save(document);
+      return document;
     }
   }
 
-  async save(state: CanvasState): Promise<void> {
+  async save(document: WorkspaceDocument): Promise<void> {
     await mkdir(DATA_DIR, { recursive: true });
-    await writeFile(STATE_PATH, JSON.stringify(state, null, 2), "utf8");
+    await writeFile(STATE_PATH, JSON.stringify(document, null, 2), "utf8");
   }
 
   async saveDataUrl(dataUrl: string, filename: string): Promise<{ relativePath: string; mime: string }> {

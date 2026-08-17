@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { Asset, Board, CanvasState, EntityId, Point, Rect, WorkspaceCommand } from "../domain/model";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, Point, Rect, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
 
 type Tool = "select" | "pan" | "board" | "import";
@@ -61,7 +61,6 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   if (name === "import") return <svg {...common}><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><path d="M4 15.5v3A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-3" /></svg>;
   if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
   if (name === "minus") return <svg {...common}><path d="M5 12h14" /></svg>;
-  if (name === "fit") return <svg {...common}><path d="M8 4H5a1 1 0 0 0-1 1v3m12-4h3a1 1 0 0 1 1 1v3M8 20H5a1 1 0 0 1-1-1v-3m12 4h3a1 1 0 0 0 1-1v-3" /></svg>;
   if (name === "group") return <svg {...common}><rect x="3.5" y="5" width="9" height="9" rx="1.2" /><rect x="11.5" y="10" width="9" height="9" rx="1.2" /></svg>;
   if (name === "duplicate") return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="1.5" /><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" /></svg>;
   if (name === "trash") return <svg {...common}><path d="M4.5 7h15M9 4h6l1 3H8l1-3ZM7 7l.7 13h8.6L17 7M10 10.5v6M14 10.5v6" /></svg>;
@@ -76,11 +75,14 @@ function ToolbarButton({ label, icon, active, onClick, disabled }: { label: stri
 
 export function App() {
   const [state, setState] = useState<CanvasState | null>(null);
+  const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
   const [tool, setTool] = useState<Tool>("select");
   const [view, setView] = useState<Viewport>({ x: 130, y: 88, zoom: 1 });
   const [interaction, setInteraction] = useState<Interaction | null>(null);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [canvasMenuOpen, setCanvasMenuOpen] = useState(false);
+  const [editingCanvas, setEditingCanvas] = useState(false);
+  const [canvasDraft, setCanvasDraft] = useState("");
   const [editingBoardId, setEditingBoardId] = useState<EntityId | null>(null);
   const [boardDraft, setBoardDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -88,12 +90,16 @@ export function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    api.state().then(setState).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load Canvas"));
+    Promise.all([api.state(), api.canvases()])
+      .then(([nextState, nextCanvases]) => { setState(nextState); setCanvases(nextCanvases); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load Canvas"));
   }, []);
 
   const run = useCallback((command: WorkspaceCommand) => {
     setError(null);
-    api.dispatch(command).then(setState).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Canvas action failed"));
+    api.dispatch(command)
+      .then(async (next) => { setState(next); setCanvases(await api.canvases()); })
+      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Canvas action failed"));
   }, []);
 
   const runImport = useCallback(async (files: File[], origin?: Point) => {
@@ -110,6 +116,7 @@ export function App() {
           ...dimensions,
         });
         setState(next);
+        setCanvases(await api.canvases());
       } catch (reason) {
         setError(reason instanceof Error ? reason.message : "Could not import image");
       }
@@ -139,15 +146,30 @@ export function App() {
     return { x: (event.clientX - viewport.left - view.x) / view.zoom, y: (event.clientY - viewport.top - view.y) / view.zoom };
   }, [view]);
 
-  const fitCanvas = useCallback(() => {
-    if (!state || !viewportRef.current) return;
-    const viewport = viewportRef.current.getBoundingClientRect();
-    const content = boundsOf([...state.boards, ...state.assets]);
-    if (!content) { setView({ x: viewport.width / 2 - 400, y: viewport.height / 2 - 220, zoom: 1 }); return; }
-    const padding = 120;
-    const zoom = clamp(Math.min((viewport.width - padding * 2) / content.width, (viewport.height - padding * 2) / content.height), MIN_ZOOM, 1.25);
-    setView({ zoom, x: viewport.width / 2 - (content.x + content.width / 2) * zoom, y: viewport.height / 2 - (content.y + content.height / 2) * zoom });
-  }, [state]);
+  const zoomBy = useCallback((delta: number, anchor?: Point) => {
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    const focus = anchor ?? (viewport ? { x: viewport.width / 2, y: viewport.height / 2 } : { x: 0, y: 0 });
+    setView((current) => {
+      const zoom = clamp(current.zoom + delta, MIN_ZOOM, MAX_ZOOM);
+      const worldPoint = { x: (focus.x - current.x) / current.zoom, y: (focus.y - current.y) / current.zoom };
+      return { zoom, x: focus.x - worldPoint.x * zoom, y: focus.y - worldPoint.y * zoom };
+    });
+  }, []);
+
+  const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
+    // macOS trackpad pinch is exposed as a ctrl-wheel gesture. Plain two-finger
+    // scrolling stays untouched so it can continue to pan the surrounding page.
+    if (!event.ctrlKey && !event.metaKey) return;
+    event.preventDefault();
+    const viewport = viewportRef.current?.getBoundingClientRect();
+    if (!viewport) return;
+    const focus = { x: event.clientX - viewport.left, y: event.clientY - viewport.top };
+    setView((current) => {
+      const zoom = clamp(current.zoom * Math.exp(-event.deltaY * 0.01), MIN_ZOOM, MAX_ZOOM);
+      const worldPoint = { x: (focus.x - current.x) / current.zoom, y: (focus.y - current.y) / current.zoom };
+      return { zoom, x: focus.x - worldPoint.x * zoom, y: focus.y - worldPoint.y * zoom };
+    });
+  }, []);
 
   const selectedAssets = useMemo(() => state?.assets.filter((asset) => state.selection.includes(asset.id)) ?? [], [state]);
   const selectedBoards = useMemo(() => state?.boards.filter((board) => state.selection.includes(board.id)) ?? [], [state]);
@@ -277,11 +299,55 @@ export function App() {
   const startEditingBoard = (board: Board) => { setEditingBoardId(board.id); setBoardDraft(board.title); };
   const commitBoardTitle = (board: Board) => { run({ type: "update-board-title", id: board.id, title: boardDraft.trim() || board.title }); setEditingBoardId(null); };
 
+  const switchCanvas = async (id: string) => {
+    setError(null);
+    try {
+      const next = await api.switchCanvas(id);
+      setState(next.state);
+      setCanvases(next.canvases);
+      setCanvasMenuOpen(false);
+      setEditingCanvas(false);
+      setView({ x: 130, y: 88, zoom: 1 });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not switch Canvas");
+    }
+  };
+
+  const createCanvas = async () => {
+    setError(null);
+    try {
+      const next = await api.createCanvas(`Canvas ${canvases.length + 1}`);
+      setState(next.state);
+      setCanvases(next.canvases);
+      setCanvasDraft(next.state.canvas.name);
+      setEditingCanvas(true);
+      setCanvasMenuOpen(true);
+      setView({ x: 130, y: 88, zoom: 1 });
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not create Canvas");
+    }
+  };
+
+  const beginCanvasRename = () => { if (!state) return; setCanvasDraft(state.canvas.name); setEditingCanvas(true); };
+  const commitCanvasRename = async () => {
+    setError(null);
+    try {
+      const next = await api.renameCanvas(canvasDraft);
+      setState(next.state);
+      setCanvases(next.canvases);
+      setEditingCanvas(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not rename Canvas");
+    }
+  };
+
   if (!state) return <main className="loading-screen">Loading Canvas<span className="loading-dot">.</span><span className="loading-dot">.</span><span className="loading-dot">.</span></main>;
 
   const marquee = interaction?.kind === "marquee" ? normalizeRect(interaction.start, interaction.current) : null;
   const boardPreview = interaction?.kind === "board" ? normalizeRect(interaction.start, interaction.current) : null;
-  const displayedSelectionBounds = interaction?.kind === "resize-assets" ? boundsOf(selectedAssets.map((asset) => previewRect(asset))) : selectionBounds;
+  const displayedSelectionBounds = interaction?.kind === "resize-assets" || interaction?.kind === "move"
+    ? boundsOf([...selectedAssets.map((asset) => previewRect(asset)), ...selectedBoards.map((board) => previewRect(board))])
+    : selectionBounds;
   const toolbarBounds = displayedSelectionBounds;
 
   return <main className={`app-shell tool-${tool}${spaceHeld ? " is-space-held" : ""}`} onPaste={handlePaste} tabIndex={0}>
@@ -294,16 +360,24 @@ export function App() {
         </button>
         {canvasMenuOpen && <div className="canvas-menu">
           <div className="canvas-menu-label">Local Canvases</div>
-          <button type="button" className="canvas-menu-item is-current" onClick={() => setCanvasMenuOpen(false)}><span className="canvas-dot" />{state.canvas.name}<span className="canvas-check">✓</span></button>
-          <div className="canvas-menu-foot">Canvas switching is ready for the next storage slice.</div>
+          {canvases.map((canvas) => <button key={canvas.id} type="button" className={`canvas-menu-item${canvas.id === state.canvas.id ? " is-current" : ""}`} onClick={() => switchCanvas(canvas.id)}>
+            <span className="canvas-dot" />
+            <span className="canvas-menu-copy"><span>{canvas.name}</span><small>{canvas.assetCount} assets · {canvas.boardCount} boards</small></span>
+            {canvas.id === state.canvas.id && <span className="canvas-check">✓</span>}
+          </button>)}
+          <div className="canvas-menu-actions">
+            {editingCanvas ? <div className="canvas-rename-row">
+              <input autoFocus value={canvasDraft} onChange={(event) => setCanvasDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void commitCanvasRename(); if (event.key === "Escape") setEditingCanvas(false); }} aria-label="Canvas name" />
+              <button type="button" onClick={() => void commitCanvasRename()} aria-label="Save Canvas name">✓</button>
+            </div> : <button type="button" className="canvas-menu-action" onClick={beginCanvasRename}>Rename current</button>}
+            <button type="button" className="canvas-menu-action canvas-menu-action-primary" onClick={() => void createCanvas()}><Icon name="plus" size={13} />New Canvas</button>
+          </div>
         </div>}
       </div>
       <div className="topbar-right">
-        <button type="button" className="zoom-control" onClick={() => setView((current) => ({ ...current, zoom: clamp(current.zoom - 0.1, MIN_ZOOM, MAX_ZOOM) }))} aria-label="Zoom out"><Icon name="minus" size={15} /></button>
+        <button type="button" className="zoom-control" onClick={() => zoomBy(-0.1)} aria-label="Zoom out"><Icon name="minus" size={15} /></button>
         <span className="zoom-value">{Math.round(view.zoom * 100)}%</span>
-        <button type="button" className="zoom-control" onClick={() => setView((current) => ({ ...current, zoom: clamp(current.zoom + 0.1, MIN_ZOOM, MAX_ZOOM) }))} aria-label="Zoom in"><Icon name="plus" size={15} /></button>
-        <span className="topbar-divider" />
-        <button type="button" className="fit-button" onClick={fitCanvas}><Icon name="fit" size={15} /><span>Fit</span></button>
+        <button type="button" className="zoom-control" onClick={() => zoomBy(0.1)} aria-label="Zoom in"><Icon name="plus" size={15} /></button>
       </div>
     </header>
 
@@ -318,7 +392,7 @@ export function App() {
       <div className="tool-rail-bottom"><span className="shortcut-hint">{spaceHeld ? "PAN" : "SPACE"}</span></div>
     </aside>
 
-    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onWheel={handleWheel} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
       <div className="world" style={{ width: WORLD_WIDTH, height: WORLD_HEIGHT, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         {state.boards.map((board) => {
           const rect = previewRect(board);

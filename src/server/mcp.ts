@@ -1,5 +1,6 @@
 import type { Asset, CanvasState, EntityId, Placement } from "../domain/model";
 import type { Workspace } from "../domain/model";
+import { generatedAssetDisplaySize } from "../domain/generated-asset";
 import { LocalWorkspaceStore } from "./storage";
 
 type JsonRpcRequest = { id?: number | string; method: string; params?: Record<string, unknown> };
@@ -13,7 +14,10 @@ const success = (id: number | string | undefined, result: unknown) => ({ jsonrpc
 const failure = (id: number | string | undefined, message: string) => ({ jsonrpc: "2.0", id: id ?? null, error: { code: -32600, message } });
 
 const tools = [
-  { name: "canvas_create", description: "Create or reset the active local Canvas.", inputSchema: { type: "object", properties: { name: { type: "string" } } } },
+  { name: "canvas_list", description: "List the named local Canvases available in this workspace.", inputSchema: { type: "object", properties: {} } },
+  { name: "canvas_create", description: "Create and activate a new local Canvas without changing existing Canvases.", inputSchema: { type: "object", properties: { name: { type: "string" } } } },
+  { name: "canvas_switch", description: "Switch the active local Canvas by id.", inputSchema: { type: "object", properties: { canvas_id: { type: "string" } }, required: ["canvas_id"] } },
+  { name: "canvas_rename", description: "Rename the active local Canvas.", inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } },
   { name: "canvas_get_state", description: "Read the active Canvas and its local Assets.", inputSchema: { type: "object", properties: {} } },
   { name: "canvas_get_selection", description: "Read selected Asset metadata and image content blocks.", inputSchema: { type: "object", properties: {} } },
   { name: "canvas_select_assets", description: "Set the active Asset Selection.", inputSchema: { type: "object", properties: { asset_ids: { type: "array", items: { type: "string" } } }, required: ["asset_ids"] } },
@@ -64,6 +68,7 @@ export class CanvasMcpAdapter {
     const args = (params.arguments ?? {}) as Record<string, unknown>;
     const state = this.workspace.getState();
 
+    if (name === "canvas_list") return success(request.id, { content: [{ type: "text", text: json({ activeCanvasId: state.canvas.id, canvases: this.workspace.getCanvases() }) }], structuredContent: { activeCanvasId: state.canvas.id, canvases: this.workspace.getCanvases() } });
     if (name === "canvas_get_state") return success(request.id, { content: [{ type: "text", text: json(stateView(state)) }], structuredContent: stateView(state) });
     if (name === "canvas_get_selection") {
       const selected = state.assets.filter((asset) => state.selection.includes(asset.id));
@@ -73,30 +78,44 @@ export class CanvasMcpAdapter {
     }
     if (name === "canvas_select_assets") {
       const next = this.workspace.dispatch({ type: "select", ids: (args.asset_ids as string[]) ?? [] });
-      await this.store.save(next);
+      await this.store.save(this.workspace.getDocument());
       return success(request.id, { content: [{ type: "text", text: `Selected ${next.selection.length} Asset(s).` }], structuredContent: stateView(next) });
     }
     if (name === "canvas_group_selection") return this.dispatch(request.id, { type: "group-selection" });
-    if (name === "canvas_undo") { const next = this.workspace.undo(); await this.store.save(next); return success(request.id, { content: [{ type: "text", text: "Canvas undo completed." }], structuredContent: stateView(next) }); }
-    if (name === "canvas_redo") { const next = this.workspace.redo(); await this.store.save(next); return success(request.id, { content: [{ type: "text", text: "Canvas redo completed." }], structuredContent: stateView(next) }); }
+    if (name === "canvas_undo") { const next = this.workspace.undo(); await this.store.save(this.workspace.getDocument()); return success(request.id, { content: [{ type: "text", text: "Canvas undo completed." }], structuredContent: stateView(next) }); }
+    if (name === "canvas_redo") { const next = this.workspace.redo(); await this.store.save(this.workspace.getDocument()); return success(request.id, { content: [{ type: "text", text: "Canvas redo completed." }], structuredContent: stateView(next) }); }
     if (name === "canvas_create") {
-      const next = this.workspace.dispatch({ type: "create-canvas", canvas: { id: crypto.randomUUID(), name: String(args.name ?? "Canvas") } });
-      await this.store.save(next);
+      const next = this.workspace.createCanvas(String(args.name ?? ""));
+      await this.store.save(this.workspace.getDocument());
       return success(request.id, { content: [{ type: "text", text: `Canvas ${next.canvas.name} is active.` }], structuredContent: stateView(next) });
+    }
+    if (name === "canvas_switch") {
+      const next = this.workspace.switchCanvas(String(args.canvas_id ?? ""));
+      await this.store.save(this.workspace.getDocument());
+      return success(request.id, { content: [{ type: "text", text: `Canvas ${next.canvas.name} is active.` }], structuredContent: stateView(next) });
+    }
+    if (name === "canvas_rename") {
+      const next = this.workspace.renameCanvas(String(args.name ?? ""));
+      await this.store.save(this.workspace.getDocument());
+      return success(request.id, { content: [{ type: "text", text: `Canvas renamed to ${next.canvas.name}.` }], structuredContent: stateView(next) });
     }
     if (name === "canvas_import_asset" || name === "canvas_receive_generated_asset") {
       const filename = String(args.filename ?? "asset.png");
       const saved = typeof args.data_url === "string"
         ? await this.store.saveDataUrl(args.data_url, filename)
         : await this.store.copyLocalFile(String(args.path), filename);
-      const width = Number(args.width ?? 640);
-      const height = Number(args.height ?? 360);
       const references = name === "canvas_receive_generated_asset" ? (args.reference_ids as string[]) ?? [] : [];
+      const requestedWidth = Number(args.width ?? 640);
+      const requestedHeight = Number(args.height ?? 360);
+      const displaySize = name === "canvas_receive_generated_asset"
+        ? generatedAssetDisplaySize(state, references, requestedWidth, requestedHeight)
+        : { width: requestedWidth, height: requestedHeight };
+      const { width, height } = displaySize;
       const placement = name === "canvas_receive_generated_asset" ? placementFor(state, width, height, references) : { x: 80, y: 80 };
       const asset: Asset = { id: crypto.randomUUID(), name: filename, mime: saved.mime, path: saved.relativePath, x: placement.x, y: placement.y, width, height, origin: name === "canvas_receive_generated_asset" ? "codex" : "imported", createdAt: new Date().toISOString(), placement: placement.placement };
       if (name === "canvas_receive_generated_asset") asset.provenance = { references, instruction: String(args.instruction ?? ""), createdAt: asset.createdAt, canvasId: state.canvas.id };
       const next = this.workspace.dispatch({ type: "import-asset", asset });
-      await this.store.save(next);
+      await this.store.save(this.workspace.getDocument());
       const message = name === "canvas_receive_generated_asset" ? `Received Generated Asset ${asset.id} and placed it ${asset.placement?.direction ?? "near"} the selected references.` : `Imported Asset ${asset.id}.`;
       return success(request.id, { content: [{ type: "text", text: message }], structuredContent: stateView(next) });
     }
@@ -105,7 +124,7 @@ export class CanvasMcpAdapter {
 
   private async dispatch(id: number | string | undefined, command: Parameters<Workspace["dispatch"]>[0]) {
     const next = this.workspace.dispatch(command);
-    await this.store.save(next);
+    await this.store.save(this.workspace.getDocument());
     return success(id, { content: [{ type: "text", text: "Canvas updated." }], structuredContent: stateView(next) });
   }
 }

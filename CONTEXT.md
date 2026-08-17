@@ -77,8 +77,12 @@ Changing an Asset's displayed dimensions through its corner handles while preser
 _Avoid_: crop
 
 **Canvas switcher**:
-The top-left control used to change between named Canvas workspaces and create, rename, or delete them.
+The top-left control used to list named Canvas workspaces, change the active Canvas, create one, and rename the current one.
 _Avoid_: project selector
+
+**Canvas catalog**:
+The local collection of named Canvases available to this workspace. Each Canvas keeps its own Assets, Boards, Selection, Groups, and spatial arrangement.
+_Avoid_: remote project list
 
 **Board creation**:
 A Board is created by dragging the Board tool across the Canvas to define its size. A newly created Board has a white surface and an editable initial title.
@@ -145,7 +149,7 @@ An empty Canvas shows a discreet centered `Drop images here` hint with a seconda
 _Avoid_: onboarding screen
 
 **Zoom controls**:
-The Canvas exposes the current zoom percentage with plus, minus, and Fit controls in the top-right area. Zoom is centered around the pointer position.
+The Canvas exposes the current zoom percentage with plus and minus controls in the fixed top-right chrome. Zoom is centered around the pointer position or the viewport center; the Canvas chrome stays fixed.
 _Avoid_: zoom panel
 
 **Layer order**:

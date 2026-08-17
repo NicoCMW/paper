@@ -49,6 +49,16 @@ export type CanvasState = {
   groups: Record<EntityId, EntityId[]>;
 };
 
+export type CanvasSummary = Canvas & {
+  assetCount: number;
+  boardCount: number;
+};
+
+export type WorkspaceDocument = {
+  activeCanvasId: EntityId;
+  canvases: CanvasState[];
+};
+
 export type ImportAssetCommand = {
   type: "import-asset";
   asset: Asset;
@@ -56,7 +66,6 @@ export type ImportAssetCommand = {
 
 export type WorkspaceCommand =
   | ImportAssetCommand
-  | { type: "create-canvas"; canvas: Canvas }
   | { type: "select"; ids: EntityId[]; additive?: boolean }
   | { type: "select-rect"; rect: Rect; additive?: boolean }
   | { type: "move-asset"; id: EntityId; dx: number; dy: number }
@@ -73,7 +82,12 @@ export type WorkspaceCommand =
 
 export type Workspace = {
   getState(): CanvasState;
+  getDocument(): WorkspaceDocument;
+  getCanvases(): CanvasSummary[];
   dispatch(command: WorkspaceCommand): CanvasState;
+  createCanvas(name: string): CanvasState;
+  switchCanvas(id: EntityId): CanvasState;
+  renameCanvas(name: string): CanvasState;
   undo(): CanvasState;
   redo(): CanvasState;
 };
