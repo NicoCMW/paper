@@ -103,6 +103,8 @@ export function App() {
   const [previewMode, setPreviewMode] = useState<PreviewMode>("youtube");
   const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
   const [carouselIndex, setCarouselIndex] = useState(0);
+  const [youtubeTitle, setYoutubeTitle] = useState("");
+  const [youtubeDark, setYoutubeDark] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -223,6 +225,11 @@ export function App() {
 
   const selectedAssets = useMemo(() => state?.assets.filter((asset) => state.selection.includes(asset.id)) ?? [], [state]);
   const selectedBoards = useMemo(() => state?.boards.filter((board) => state.selection.includes(board.id)) ?? [], [state]);
+  const openPreview = useCallback(() => {
+    setPreviewOpen(true);
+    setCarouselIndex(0);
+    if (selectedAssets[0]) setYoutubeTitle(selectedAssets[0].name.replace(/\.[^.]+$/, ""));
+  }, [selectedAssets]);
   const selectionBounds = useMemo(() => boundsOf([...selectedAssets, ...selectedBoards]), [selectedAssets, selectedBoards]);
   const activeMoveIds = useMemo(() => {
     if (!state || !interaction || interaction.kind !== "move") return new Set<EntityId>();
@@ -458,7 +465,7 @@ export function App() {
     </header>
 
     {libraryOpen && <AssetLibraryPanel assets={library} onInsert={(asset) => void insertFromLibrary(asset)} onClose={() => setLibraryOpen(false)} />}
-    {previewOpen && <PreviewPanel assets={selectedAssets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && <PreviewPanel assets={selectedAssets} contextAssets={state.assets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} youtubeTitle={youtubeTitle} youtubeDark={youtubeDark} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onYoutubeTitleChange={setYoutubeTitle} onYoutubeDarkChange={setYoutubeDark} onClose={() => setPreviewOpen(false)} />}
 
     <aside className="tool-rail" aria-label="Canvas tools">
       <div className="tool-rail-group">
@@ -469,7 +476,7 @@ export function App() {
         <ToolbarButton label="Import images" icon="import" active={tool === "import"} onClick={() => { setTool("select"); fileInput.current?.click(); }} />
         <span className="rail-divider" />
         <ToolbarButton label="Assets library" icon="folder" active={libraryOpen} onClick={() => setLibraryOpen((open) => !open)} />
-        <ToolbarButton label="Preview selection" icon="preview" active={previewOpen} onClick={() => { setPreviewOpen(true); setCarouselIndex(0); }} />
+        <ToolbarButton label="Preview selection" icon="preview" active={previewOpen} onClick={openPreview} />
       </div>
       <div className="tool-rail-bottom"><span className="shortcut-hint">{spaceHeld ? "PAN" : "SPACE"}</span></div>
     </aside>
@@ -505,7 +512,7 @@ export function App() {
             {selectedAssets.length > 1 && <button type="button" onClick={() => run({ type: "group-selection" })}><Icon name="group" size={15} />Group</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "create-board-from-selection" })}><Icon name="board" size={15} />Board</button>}
             {selectedAssets.length === 1 && <button type="button" onClick={() => void saveToLibrary(selectedAssets[0])}><Icon name="folder" size={15} />Save</button>}
-            {selectedAssets.length > 0 && <button type="button" onClick={() => { setPreviewOpen(true); setCarouselIndex(0); }}><Icon name="preview" size={15} />Preview</button>}
+            {selectedAssets.length > 0 && <button type="button" onClick={openPreview}><Icon name="preview" size={15} />Preview</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}
             <button type="button" className="danger-action" onClick={() => run({ type: "delete-selection" })}><Icon name="trash" size={15} /></button>
           </div>
