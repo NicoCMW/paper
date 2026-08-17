@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { Asset } from "./model";
+import type { Asset, Note } from "./model";
 import { createInitialState } from "./model";
 import { createWorkspace } from "./workspace";
 import { libraryAssetFrom } from "./asset-library";
 
 const asset = (id: string, x: number, y: number, width = 100, height = 60): Asset => ({
   id, name: `${id}.png`, mime: "image/png", path: `assets/${id}.png`, origin: "imported", createdAt: "2026-01-01T00:00:00.000Z", x, y, width, height,
+});
+
+const note = (id: string, x = 10, y = 20): Note => ({
+  id, text: "First note", x, y, width: 240, height: 100, fontSize: 16, createdAt: "2026-01-01T00:00:00.000Z",
 });
 
 describe("Canvas workspace", () => {
@@ -93,6 +97,20 @@ describe("Canvas workspace", () => {
     expect(workspace.getState().assets[0].x).toBe(10);
     workspace.redo();
     expect(workspace.getState().assets[0].x).toBe(60);
+  });
+
+  it("creates, edits, moves, resizes, and deletes a Note through the workspace interface", () => {
+    const workspace = createWorkspace();
+    workspace.dispatch({ type: "create-note", note: note("note-1") });
+    expect(workspace.getState()).toMatchObject({ notes: [note("note-1")], selection: ["note-1"] });
+
+    workspace.dispatch({ type: "update-note-text", id: "note-1", text: "Updated note" });
+    workspace.dispatch({ type: "move-selection", ids: ["note-1"], dx: 40, dy: 25 });
+    workspace.dispatch({ type: "resize-selection", scale: 2 });
+    expect(workspace.getState().notes[0]).toMatchObject({ text: "Updated note", width: 480, height: 200 });
+
+    workspace.dispatch({ type: "delete-selection" });
+    expect(workspace.getState().notes).toHaveLength(0);
   });
 
   it("keeps reusable library Assets independent from Canvas membership", () => {

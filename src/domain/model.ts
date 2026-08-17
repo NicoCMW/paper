@@ -30,6 +30,13 @@ export type Asset = Rect & {
   placement?: Placement;
 };
 
+export type Note = Rect & {
+  id: EntityId;
+  text: string;
+  fontSize: number;
+  createdAt: string;
+};
+
 export type LibraryAsset = {
   id: EntityId;
   name: string;
@@ -57,6 +64,7 @@ export type CanvasState = {
   canvas: Canvas;
   assets: Asset[];
   boards: Board[];
+  notes: Note[];
   selection: EntityId[];
   groups: Record<EntityId, EntityId[]>;
 };
@@ -79,6 +87,8 @@ export type ImportAssetCommand = {
 
 export type WorkspaceCommand =
   | ImportAssetCommand
+  | { type: "create-note"; note: Note }
+  | { type: "update-note-text"; id: EntityId; text: string }
   | { type: "select"; ids: EntityId[]; additive?: boolean }
   | { type: "select-rect"; rect: Rect; additive?: boolean }
   | { type: "move-asset"; id: EntityId; dx: number; dy: number }
@@ -111,5 +121,5 @@ export type Workspace = {
 export const DEFAULT_CANVAS: Canvas = { id: "canvas-main", name: "Canvas" };
 
 export function createInitialState(canvas: Canvas = DEFAULT_CANVAS): CanvasState {
-  return { canvas, assets: [], boards: [], selection: [], groups: {} };
+  return { canvas, assets: [], boards: [], notes: [], selection: [], groups: {} };
 }

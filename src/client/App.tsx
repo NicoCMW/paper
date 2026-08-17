@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Point, Rect, WorkspaceCommand } from "../domain/model";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Note, Point, Rect, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
 import { AssetLibraryPanel, LIBRARY_ASSET_DRAG_MIME } from "./AssetLibraryPanel";
 import { PreviewPanel } from "./PreviewPanel";
 
-type Tool = "select" | "pan" | "board" | "import";
+type Tool = "select" | "pan" | "board" | "import" | "text";
 type PreviewMode = "youtube" | "carousel";
 type PreviewDevice = "desktop" | "mobile";
 type Viewport = { x: number; y: number; zoom: number };
@@ -14,6 +14,7 @@ type Interaction =
   | { kind: "move"; pointerId: number; start: Point; ids: EntityId[]; dx: number; dy: number }
   | { kind: "marquee"; pointerId: number; start: Point; current: Point }
   | { kind: "board"; pointerId: number; start: Point; current: Point }
+  | { kind: "note"; pointerId: number; start: Point; current: Point }
   | { kind: "pan"; pointerId: number; start: Point; origin: Point }
   | { kind: "resize-assets"; pointerId: number; anchor: ResizeAnchor; start: Point; scale: number }
   | { kind: "resize-board"; pointerId: number; boardId: EntityId; anchor: ResizeAnchor; start: Point; dw: number; dh: number };
@@ -63,6 +64,9 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   if (name === "pan") return <svg {...common}><path d="M7.2 11.1V6.6a1.5 1.5 0 0 1 3 0v3.6-5.7a1.5 1.5 0 0 1 3 0v5.1-4.1a1.5 1.5 0 0 1 3 0v5.3-2.2a1.5 1.5 0 0 1 3 0v5.1c0 4.1-2.4 6.1-6.2 6.1h-1.8c-2.5 0-3.4-1.2-4.6-2.8L4.5 14a1.7 1.7 0 0 1 2.7-2.1Z" /></svg>;
   if (name === "board") return <svg {...common}><rect x="3.5" y="4" width="17" height="16" rx="1.5" /><path d="M7 8h10M7 12h6M7 16h8" /></svg>;
   if (name === "import") return <svg {...common}><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><path d="M4 15.5v3A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-3" /></svg>;
+  if (name === "text") return <svg {...common}><path d="M5 5h14M12 5v14M8.5 19h7" /></svg>;
+  if (name === "copy") return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="1.5" /><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" /></svg>;
+  if (name === "download") return <svg {...common}><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><path d="M4 17.5V20h16v-2.5" /></svg>;
   if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
   if (name === "minus") return <svg {...common}><path d="M5 12h14" /></svg>;
   if (name === "group") return <svg {...common}><rect x="3.5" y="5" width="9" height="9" rx="1.2" /><rect x="11.5" y="10" width="9" height="9" rx="1.2" /></svg>;
@@ -107,6 +111,9 @@ export function App() {
   const [youtubeDark, setYoutubeDark] = useState(true);
   const [youtubeSeed, setYoutubeSeed] = useState(1);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [editingNoteId, setEditingNoteId] = useState<EntityId | null>(null);
+  const [noteDraft, setNoteDraft] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
@@ -131,6 +138,34 @@ export function App() {
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not save Asset to the library");
     }
+  }, []);
+
+  const copyAssetToClipboard = useCallback(async (asset: Asset) => {
+    try {
+      const response = await fetch(assetUrl(asset.path));
+      if (!response.ok) throw new Error("Could not read Asset");
+      const blob = await response.blob();
+      const ClipboardItemConstructor = globalThis.ClipboardItem;
+      if (!navigator.clipboard?.write || !ClipboardItemConstructor) throw new Error("Image clipboard is not available in this browser");
+      const mime = blob.type || asset.mime || "image/png";
+      await navigator.clipboard.write([new ClipboardItemConstructor({ [mime]: blob })]);
+      setError(null);
+      setNotice("Asset copied to clipboard");
+      window.setTimeout(() => setNotice(null), 1800);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not copy Asset");
+    }
+  }, []);
+
+  const downloadAsset = useCallback((asset: Asset) => {
+    const link = document.createElement("a");
+    link.href = assetUrl(asset.path);
+    link.download = asset.name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    setNotice("Download started");
+    window.setTimeout(() => setNotice(null), 1800);
   }, []);
 
   const insertFromLibrary = useCallback(async (asset: LibraryAsset, placement?: { x?: number; y?: number }) => {
@@ -226,13 +261,27 @@ export function App() {
 
   const selectedAssets = useMemo(() => state?.assets.filter((asset) => state.selection.includes(asset.id)) ?? [], [state]);
   const selectedBoards = useMemo(() => state?.boards.filter((board) => state.selection.includes(board.id)) ?? [], [state]);
+  const selectedNotes = useMemo(() => state?.notes.filter((note) => state.selection.includes(note.id)) ?? [], [state]);
+
+  useEffect(() => {
+    const handleCopy = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA") return;
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "c" || selectedAssets.length !== 1) return;
+      event.preventDefault();
+      void copyAssetToClipboard(selectedAssets[0]);
+    };
+    window.addEventListener("keydown", handleCopy);
+    return () => window.removeEventListener("keydown", handleCopy);
+  }, [copyAssetToClipboard, selectedAssets]);
+
   const openPreview = useCallback(() => {
     setPreviewOpen(true);
     setYoutubeSeed((current) => (current + 1 + Math.floor(Math.random() * 1000000)) >>> 0);
     setCarouselIndex(0);
     if (selectedAssets[0]) setYoutubeTitle(selectedAssets[0].name.replace(/\.[^.]+$/, ""));
   }, [selectedAssets]);
-  const selectionBounds = useMemo(() => boundsOf([...selectedAssets, ...selectedBoards]), [selectedAssets, selectedBoards]);
+  const selectionBounds = useMemo(() => boundsOf([...selectedAssets, ...selectedBoards, ...selectedNotes]), [selectedAssets, selectedBoards, selectedNotes]);
   const activeMoveIds = useMemo(() => {
     if (!state || !interaction || interaction.kind !== "move") return new Set<EntityId>();
     const ids = new Set(interaction.ids);
@@ -240,11 +289,11 @@ export function App() {
     return ids;
   }, [interaction, state]);
 
-  const previewRect = useCallback((item: Asset | Board): Rect => {
+  const previewRect = useCallback((item: Asset | Board | Note): Rect => {
     let rect: Rect = { x: item.x, y: item.y, width: item.width, height: item.height };
     if (interaction?.kind === "move" && activeMoveIds.has(item.id)) rect = { ...rect, x: rect.x + interaction.dx, y: rect.y + interaction.dy };
-    if (interaction?.kind === "resize-assets" && selectedAssets.some((asset) => asset.id === item.id)) {
-      const bounds = boundsOf(selectedAssets);
+    if (interaction?.kind === "resize-assets" && [...selectedAssets, ...selectedNotes].some((selected) => selected.id === item.id)) {
+      const bounds = boundsOf([...selectedAssets, ...selectedNotes]);
       if (bounds) {
         const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
         rect = { width: rect.width * interaction.scale, height: rect.height * interaction.scale, x: center.x + (rect.x + rect.width / 2 - center.x) * interaction.scale - rect.width * interaction.scale / 2, y: center.y + (rect.y + rect.height / 2 - center.y) * interaction.scale - rect.height * interaction.scale / 2 };
@@ -260,16 +309,18 @@ export function App() {
       if (interaction.anchor.includes("top")) { const height = Math.max(120, board.height - dh); rect.y = board.y + board.height - height; rect.height = height; }
     }
     return rect;
-  }, [activeMoveIds, interaction, selectedAssets]);
+  }, [activeMoveIds, interaction, selectedAssets, selectedNotes]);
 
-  const beginMove = (event: ReactPointerEvent, id: EntityId, kind: "asset" | "board") => {
+  const beginMove = (event: ReactPointerEvent, id: EntityId, kind: "asset" | "board" | "note") => {
     if (event.button !== 0 || tool !== "select") return;
     event.preventDefault();
     event.stopPropagation();
     const isSelected = state?.selection.includes(id) ?? false;
     const locked = kind === "board"
       ? state?.boards.some((board) => board.id === id && board.locked) ?? false
-      : state?.assets.some((asset) => asset.id === id && asset.parentBoardId && state.boards.some((board) => board.id === asset.parentBoardId && board.locked)) ?? false;
+      : kind === "asset"
+        ? state?.assets.some((asset) => asset.id === id && asset.parentBoardId && state.boards.some((board) => board.id === asset.parentBoardId && board.locked)) ?? false
+        : false;
     if (locked) {
       if (event.shiftKey) { void run({ type: "select", ids: [id], additive: true }); return; }
       if (!isSelected) {
@@ -299,6 +350,7 @@ export function App() {
     const panning = tool === "pan" || spaceHeld || event.button === 1;
     if (panning) { event.currentTarget.setPointerCapture(event.pointerId); setInteraction({ kind: "pan", pointerId: event.pointerId, start: { x: event.clientX, y: event.clientY }, origin: { x: view.x, y: view.y } }); return; }
     if (tool === "board") { event.currentTarget.setPointerCapture(event.pointerId); setInteraction({ kind: "board", pointerId: event.pointerId, start: point, current: point }); return; }
+    if (tool === "text") { event.currentTarget.setPointerCapture(event.pointerId); setInteraction({ kind: "note", pointerId: event.pointerId, start: point, current: point }); return; }
     if (tool !== "select") return;
     event.currentTarget.setPointerCapture(event.pointerId);
     setInteraction({ kind: "marquee", pointerId: event.pointerId, start: point, current: point });
@@ -309,9 +361,9 @@ export function App() {
     if (interaction.kind === "pan") { setView((current) => ({ ...current, x: interaction.origin.x + event.clientX - interaction.start.x, y: interaction.origin.y + event.clientY - interaction.start.y })); return; }
     const point = toWorld(event);
     if (interaction.kind === "move") setInteraction({ ...interaction, dx: point.x - interaction.start.x, dy: point.y - interaction.start.y });
-    if (interaction.kind === "marquee" || interaction.kind === "board") setInteraction({ ...interaction, current: point });
+    if (interaction.kind === "marquee" || interaction.kind === "board" || interaction.kind === "note") setInteraction({ ...interaction, current: point });
     if (interaction.kind === "resize-assets") {
-      const bounds = boundsOf(selectedAssets);
+      const bounds = boundsOf([...selectedAssets, ...selectedNotes]);
       if (!bounds) return;
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
       const startDistance = Math.max(1, Math.hypot(interaction.start.x - center.x, interaction.start.y - center.y));
@@ -344,6 +396,19 @@ export function App() {
           if (rect.width > 80 && rect.height > 60) await run({ type: "create-board", rect, title: "Untitled Board" });
           setTool("select");
         }
+        if (completed.kind === "note") {
+          const drawn = normalizeRect(completed.start, completed.current);
+          const rect = {
+            x: drawn.x,
+            y: drawn.y,
+            width: Math.max(140, drawn.width),
+            height: Math.max(72, drawn.height),
+          };
+          const note: Note = { id: crypto.randomUUID(), ...rect, text: "", fontSize: 16, createdAt: new Date().toISOString() };
+          const next = await run({ type: "create-note", note });
+          if (next) { setEditingNoteId(note.id); setNoteDraft(""); }
+          setTool("select");
+        }
       } finally {
         setInteraction(null);
       }
@@ -353,7 +418,7 @@ export function App() {
 
   const startAssetResize = (event: ReactPointerEvent, anchor: ResizeAnchor) => {
     event.preventDefault(); event.stopPropagation();
-    if (!selectionBounds || selectedAssets.length === 0) return;
+    if (!selectionBounds || (selectedAssets.length === 0 && selectedNotes.length === 0)) return;
     viewportRef.current?.setPointerCapture(event.pointerId);
     setInteraction({ kind: "resize-assets", pointerId: event.pointerId, anchor, start: toWorld(event), scale: 1 });
   };
@@ -397,6 +462,8 @@ export function App() {
 
   const startEditingBoard = (board: Board) => { setEditingBoardId(board.id); setBoardDraft(board.title); };
   const commitBoardTitle = (board: Board) => { run({ type: "update-board-title", id: board.id, title: boardDraft.trim() || board.title }); setEditingBoardId(null); };
+  const startEditingNote = (note: Note) => { setEditingNoteId(note.id); setNoteDraft(note.text); };
+  const commitNoteText = (note: Note) => { void run({ type: "update-note-text", id: note.id, text: noteDraft }); setEditingNoteId(null); };
 
   const switchCanvas = async (id: string) => {
     setError(null);
@@ -444,8 +511,9 @@ export function App() {
 
   const marquee = interaction?.kind === "marquee" ? normalizeRect(interaction.start, interaction.current) : null;
   const boardPreview = interaction?.kind === "board" ? normalizeRect(interaction.start, interaction.current) : null;
+  const notePreview = interaction?.kind === "note" ? normalizeRect(interaction.start, interaction.current) : null;
   const displayedSelectionBounds = interaction?.kind === "resize-assets" || interaction?.kind === "move"
-    ? boundsOf([...selectedAssets.map((asset) => previewRect(asset)), ...selectedBoards.map((board) => previewRect(board))])
+    ? boundsOf([...selectedAssets.map((asset) => previewRect(asset)), ...selectedBoards.map((board) => previewRect(board)), ...selectedNotes.map((note) => previewRect(note))])
     : selectionBounds;
   const toolbarBounds = displayedSelectionBounds;
 
@@ -489,6 +557,7 @@ export function App() {
         <ToolbarButton label="Pan Canvas" icon="pan" active={tool === "pan"} onClick={() => setTool("pan")} />
         <span className="rail-divider" />
         <ToolbarButton label="Create Board" icon="board" active={tool === "board"} onClick={() => setTool("board")} />
+        <ToolbarButton label="Add Note" icon="text" active={tool === "text"} onClick={() => setTool("text")} />
         <ToolbarButton label="Import images" icon="import" active={tool === "import"} onClick={() => { setTool("select"); fileInput.current?.click(); }} />
         <span className="rail-divider" />
         <ToolbarButton label="Assets library" icon="folder" active={libraryOpen} onClick={() => setLibraryOpen((open) => !open)} />
@@ -518,26 +587,38 @@ export function App() {
             {selected && <div className="asset-selection-meta"><span>{asset.name}</span><span>{Math.round(rect.width)} × {Math.round(rect.height)}</span></div>}
           </div>;
         })}
+        {state.notes.map((note) => {
+          const rect = previewRect(note);
+          const selected = state.selection.includes(note.id);
+          const editing = editingNoteId === note.id;
+          return <div key={note.id} data-entity-id={note.id} className={`note${selected ? " is-selected" : ""}`} style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: selected ? 9 : 6, fontSize: note.fontSize }} onPointerDown={(event) => beginMove(event, note.id, "note")} onDoubleClick={(event) => { event.stopPropagation(); startEditingNote(note); }}>
+            {editing ? <textarea autoFocus className="note-editor" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onPointerDown={(event) => event.stopPropagation()} onBlur={() => commitNoteText(note)} onKeyDown={(event) => { if (event.key === "Escape") { setEditingNoteId(null); setNoteDraft(note.text); } if ((event.metaKey || event.ctrlKey) && event.key === "Enter") commitNoteText(note); }} /> : <span className={!note.text ? "is-empty" : undefined}>{note.text || "Write a note…"}</span>}
+          </div>;
+        })}
         {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }} />}
         {boardPreview && <div className="board-preview" style={{ left: boardPreview.x, top: boardPreview.y, width: boardPreview.width, height: boardPreview.height }} />}
+        {notePreview && <div className="note-preview" style={{ left: notePreview.x, top: notePreview.y, width: Math.max(140, notePreview.width), height: Math.max(72, notePreview.height) }} />}
         {toolbarBounds && state.selection.length > 0 && <div className="selection-overlay" style={{ left: toolbarBounds.x, top: toolbarBounds.y, width: toolbarBounds.width, height: toolbarBounds.height }}>
-          {selectedAssets.length > 0 && (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
+          {(selectedAssets.length > 0 || selectedNotes.length > 0) && (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
           <div className="selection-toolbar" style={{ transform: `scale(${1 / view.zoom})` }} onPointerDown={(event) => event.stopPropagation()}>
             <span className="selection-count">{state.selection.length} selected</span>
             {selectedBoards.length === 1 && <button type="button" onClick={() => void run({ type: "toggle-board-lock", id: selectedBoards[0].id })}><Icon name={selectedBoards[0].locked ? "unlock" : "lock"} size={15} />{selectedBoards[0].locked ? "Unlock" : "Lock"}</button>}
             {selectedAssets.length > 1 && <button type="button" onClick={() => run({ type: "group-selection" })}><Icon name="group" size={15} />Group</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "create-board-from-selection" })}><Icon name="board" size={15} />Board</button>}
             {selectedAssets.length === 1 && <button type="button" onClick={() => void saveToLibrary(selectedAssets[0])}><Icon name="folder" size={15} />Save</button>}
+            {selectedAssets.length === 1 && <button type="button" onClick={() => void copyAssetToClipboard(selectedAssets[0])}><Icon name="copy" size={15} />Copy</button>}
+            {selectedAssets.length === 1 && <button type="button" onClick={() => downloadAsset(selectedAssets[0])}><Icon name="download" size={15} />Download</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={openPreview}><Icon name="preview" size={15} />Preview</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}
             <button type="button" className="danger-action" onClick={() => run({ type: "delete-selection" })}><Icon name="trash" size={15} /></button>
           </div>
         </div>}
       </div>
-      {state.assets.length === 0 && !interaction && <div className="empty-canvas"><div className="empty-title">Drop images here</div><div className="empty-subtitle">or paste from your clipboard</div></div>}
-      <div className="canvas-status">{state.assets.length} assets <span>·</span> {state.boards.length} boards</div>
+      {state.assets.length === 0 && state.notes.length === 0 && !interaction && <div className="empty-canvas"><div className="empty-title">Drop images here</div><div className="empty-subtitle">or paste from your clipboard</div></div>}
+      <div className="canvas-status">{state.assets.length} assets <span>·</span> {state.boards.length} boards <span>·</span> {state.notes.length} notes</div>
     </div>
     <input ref={fileInput} className="hidden-input" type="file" accept="image/*" multiple onChange={handleFileChange} />
+    {notice && <button type="button" className="notice-toast" onClick={() => setNotice(null)}>{notice}<span>×</span></button>}
     {error && <button type="button" className="error-toast" onClick={() => setError(null)}>{error}<span>×</span></button>}
   </main>;
 }

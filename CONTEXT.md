@@ -12,6 +12,14 @@ _Avoid_: campaign, camba
 A visual item that can live on a Canvas, such as an imported image or a generated image.
 _Avoid_: file, picture
 
+**Note**:
+Editable text placed directly on a Canvas. A Note is spatial, persistent, and independently selectable; it is not an Asset, Board, or comment.
+_Avoid_: comment, text file
+
+**Text tool**:
+The Canvas tool used to draw a Note rectangle and begin editing its text.
+_Avoid_: annotation mode
+
 **Reference image**:
 An Asset deliberately selected as input or inspiration for a new image generation.
 _Avoid_: source file

@@ -1,4 +1,4 @@
-import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Note, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
 import { createInitialState } from "./model";
 
 type CanvasHistory = {
@@ -20,11 +20,11 @@ const intersects = (a: Rect, b: Rect): boolean =>
   a.y < b.y + b.height &&
   a.y + a.height > b.y;
 
-const boundsOf = (assets: Asset[]): Rect => {
-  const left = Math.min(...assets.map((asset) => asset.x));
-  const top = Math.min(...assets.map((asset) => asset.y));
-  const right = Math.max(...assets.map((asset) => asset.x + asset.width));
-  const bottom = Math.max(...assets.map((asset) => asset.y + asset.height));
+const boundsOf = (items: Array<Pick<Rect, "x" | "y" | "width" | "height">>): Rect => {
+  const left = Math.min(...items.map((item) => item.x));
+  const top = Math.min(...items.map((item) => item.y));
+  const right = Math.max(...items.map((item) => item.x + item.width));
+  const bottom = Math.max(...items.map((item) => item.y + item.height));
   return { x: left, y: top, width: right - left, height: bottom - top };
 };
 
@@ -45,7 +45,10 @@ const syncBoardMembers = (boards: Board[], assets: Asset[]): Board[] => boards.m
 }));
 
 const selectIntersecting = (state: CanvasState, rect: Rect, additive: boolean): CanvasState => {
-  const hitIds = state.assets.filter((asset) => intersects(asset, rect)).map((asset) => asset.id);
+  const hitIds = [
+    ...state.assets.filter((asset) => intersects(asset, rect)).map((asset) => asset.id),
+    ...state.notes.filter((note) => intersects(note, rect)).map((note) => note.id),
+  ];
   const selection = additive
     ? [...state.selection, ...hitIds.filter((id) => !state.selection.includes(id))]
     : hitIds;
@@ -56,6 +59,10 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
   switch (command.type) {
     case "import-asset":
       return { ...previous, assets: [...previous.assets, command.asset], selection: [command.asset.id] };
+    case "create-note":
+      return { ...previous, notes: [...previous.notes, command.note], selection: [command.note.id] };
+    case "update-note-text":
+      return { ...previous, notes: previous.notes.map((note) => note.id === command.id ? { ...note, text: command.text } : note) };
     case "select": {
       const selection = command.additive
         ? command.ids.reduce<EntityId[]>(
@@ -106,6 +113,7 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
         if (selectedIds.has(asset.id) && lockedBoardFor(previous, asset)) return asset;
         return { ...asset, x: asset.x + command.dx, y: asset.y + command.dy };
       });
+      const notes = previous.notes.map((note) => selectedIds.has(note.id) ? { ...note, x: note.x + command.dx, y: note.y + command.dy } : note);
       const boards = previous.boards.map((board) =>
         selectedIds.has(board.id) && !board.locked ? { ...board, x: board.x + command.dx, y: board.y + command.dy } : board,
       );
@@ -116,15 +124,17 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
           : asset,
       );
       const nextBoards = syncBoardMembers(boards, assets);
-      return { ...previous, assets, boards: nextBoards, selection: command.ids ?? previous.selection };
+      return { ...previous, assets, boards: nextBoards, notes, selection: command.ids ?? previous.selection };
     }
     case "resize-selection": {
-      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id) && !lockedBoardFor(previous, asset));
+      const selectedAssets = previous.assets.filter((asset) => previous.selection.includes(asset.id) && !lockedBoardFor(previous, asset));
+      const selectedNotes = previous.notes.filter((note) => previous.selection.includes(note.id));
+      const selected = [...selectedAssets, ...selectedNotes];
       if (selected.length === 0 || command.scale <= 0) return previous;
       const bounds = boundsOf(selected);
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
       const assets = previous.assets.map((asset) => {
-        if (!previous.selection.includes(asset.id)) return asset;
+        if (!selectedAssets.some((selectedAsset) => selectedAsset.id === asset.id)) return asset;
         const nextWidth = asset.width * command.scale;
         const nextHeight = asset.height * command.scale;
         return {
@@ -135,7 +145,19 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
           height: nextHeight,
         };
       });
-      return { ...previous, assets };
+      const notes = previous.notes.map((note) => {
+        if (!selectedNotes.some((selectedNote) => selectedNote.id === note.id)) return note;
+        const nextWidth = note.width * command.scale;
+        const nextHeight = note.height * command.scale;
+        return {
+          ...note,
+          x: center.x + (note.x + note.width / 2 - center.x) * command.scale - nextWidth / 2,
+          y: center.y + (note.y + note.height / 2 - center.y) * command.scale - nextHeight / 2,
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+      return { ...previous, assets, notes };
     }
     case "resize-board": {
       const board = previous.boards.find((candidate) => candidate.id === command.id);
@@ -201,14 +223,17 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
     case "duplicate-selection": {
       const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
       const duplicates = selected.map((asset) => ({ ...asset, id: crypto.randomUUID(), x: asset.x + 32, y: asset.y + 32 }));
+      const selectedNotes = previous.notes.filter((note) => previous.selection.includes(note.id));
+      const noteDuplicates: Note[] = selectedNotes.map((note) => ({ ...note, id: crypto.randomUUID(), x: note.x + 32, y: note.y + 32 }));
       const assets = [...previous.assets, ...duplicates];
-      return { ...previous, assets, boards: syncBoardMembers(previous.boards, assets), selection: duplicates.map((asset) => asset.id) };
+      return { ...previous, assets, notes: [...previous.notes, ...noteDuplicates], boards: syncBoardMembers(previous.boards, assets), selection: [...duplicates.map((asset) => asset.id), ...noteDuplicates.map((note) => note.id)] };
     }
     case "delete-selection": {
       const deleted = new Set(previous.selection);
       return {
         ...previous,
         assets: previous.assets.filter((asset) => !deleted.has(asset.id)),
+        notes: previous.notes.filter((note) => !deleted.has(note.id)),
         boards: previous.boards.filter((board) => !deleted.has(board.id)).map((board) => ({
           ...board,
           memberAssetIds: board.memberAssetIds.filter((id) => !deleted.has(id)),
@@ -220,15 +245,17 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
   }
 }
 
+const normalizeCanvasState = (state: CanvasState): CanvasState => ({ ...state, notes: state.notes ?? [] });
+
 const documentFrom = (initial: CanvasState | WorkspaceDocument): WorkspaceDocument => {
   if ("canvases" in initial) {
-    const canvases = initial.canvases.length > 0 ? initial.canvases : [createInitialState()];
+    const canvases = initial.canvases.length > 0 ? initial.canvases.map(normalizeCanvasState) : [createInitialState()];
     const activeCanvasId = canvases.some((canvas) => canvas.canvas.id === initial.activeCanvasId)
       ? initial.activeCanvasId
       : canvases[0].canvas.id;
     return clone({ activeCanvasId, canvases, library: initial.library ?? [] });
   }
-  return { activeCanvasId: initial.canvas.id, canvases: [clone(initial)], library: [] };
+  return { activeCanvasId: initial.canvas.id, canvases: [clone(normalizeCanvasState(initial))], library: [] };
 };
 
 const activeCanvas = (document: WorkspaceDocument): CanvasState => {
