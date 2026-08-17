@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { Asset, Board, CanvasState, CanvasSummary, EntityId, Point, Rect, WorkspaceCommand } from "../domain/model";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Point, Rect, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
+import { AssetLibraryPanel } from "./AssetLibraryPanel";
+import { PreviewPanel } from "./PreviewPanel";
 
 type Tool = "select" | "pan" | "board" | "import";
+type PreviewMode = "youtube" | "carousel";
+type PreviewDevice = "desktop" | "mobile";
 type Viewport = { x: number; y: number; zoom: number };
 type ResizeAnchor = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
@@ -68,6 +72,12 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   if (name === "unlock") return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 7-2.7" /></svg>;
   if (name === "chevron") return <svg {...common}><path d="m7 9 5 5 5-5" /></svg>;
   if (name === "undo") return <svg {...common}><path d="M9 8 4 12l5 4" /><path d="M5 12h8a6 6 0 0 1 6 6" /></svg>;
+  if (name === "folder") return <svg {...common}><path d="M3.5 7.5A2.5 2.5 0 0 1 6 5h4l2 2h6.5A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9Z" /><path d="M3.5 9h17" /></svg>;
+  if (name === "preview") return <svg {...common}><rect x="3.5" y="5" width="17" height="14" rx="2" /><path d="m10 9 5 3-5 3V9Z" /></svg>;
+  if (name === "close") return <svg {...common}><path d="m6 6 12 12M18 6 6 18" /></svg>;
+  if (name === "search") return <svg {...common}><circle cx="10.8" cy="10.8" r="5.8" /><path d="m15.2 15.2 4.3 4.3" /></svg>;
+  if (name === "arrow-left") return <svg {...common}><path d="m14 5-7 7 7 7" /></svg>;
+  if (name === "arrow-right") return <svg {...common}><path d="m10 5 7 7-7 7" /></svg>;
   return <svg {...common}><circle cx="12" cy="12" r="8" /></svg>;
 }
 
@@ -78,6 +88,7 @@ function ToolbarButton({ label, icon, active, onClick, disabled }: { label: stri
 export function App() {
   const [state, setState] = useState<CanvasState | null>(null);
   const [canvases, setCanvases] = useState<CanvasSummary[]>([]);
+  const [library, setLibrary] = useState<LibraryAsset[]>([]);
   const [tool, setTool] = useState<Tool>("select");
   const [view, setView] = useState<Viewport>({ x: 130, y: 88, zoom: 1 });
   const [interaction, setInteraction] = useState<Interaction | null>(null);
@@ -87,13 +98,18 @@ export function App() {
   const [canvasDraft, setCanvasDraft] = useState("");
   const [editingBoardId, setEditingBoardId] = useState<EntityId | null>(null);
   const [boardDraft, setBoardDraft] = useState("");
+  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("youtube");
+  const [previewDevice, setPreviewDevice] = useState<PreviewDevice>("desktop");
+  const [carouselIndex, setCarouselIndex] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    Promise.all([api.state(), api.canvases()])
-      .then(([nextState, nextCanvases]) => { setState(nextState); setCanvases(nextCanvases); })
+    Promise.all([api.state(), api.canvases(), api.library()])
+      .then(([nextState, nextCanvases, nextLibrary]) => { setState(nextState); setCanvases(nextCanvases); setLibrary(nextLibrary.assets); })
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load Canvas"));
   }, []);
 
@@ -102,6 +118,28 @@ export function App() {
     return api.dispatch(command)
       .then(async (next) => { setState(next); setCanvases(await api.canvases()); return next; })
       .catch((reason: unknown) => { setError(reason instanceof Error ? reason.message : "Canvas action failed"); return undefined; });
+  }, []);
+
+  const saveToLibrary = useCallback(async (asset: Asset) => {
+    setError(null);
+    try {
+      const next = await api.saveLibraryAsset(asset.id);
+      setLibrary(next.assets);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not save Asset to the library");
+    }
+  }, []);
+
+  const insertFromLibrary = useCallback(async (asset: LibraryAsset) => {
+    setError(null);
+    try {
+      const next = await api.insertLibraryAsset(asset.id);
+      setState(next.state);
+      setLibrary(next.assets);
+      setCanvases(await api.canvases());
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not insert library Asset");
+    }
   }, []);
 
   const runImport = useCallback(async (files: File[], origin?: Point) => {
@@ -419,6 +457,9 @@ export function App() {
       </div>
     </header>
 
+    {libraryOpen && <AssetLibraryPanel assets={library} onInsert={(asset) => void insertFromLibrary(asset)} onClose={() => setLibraryOpen(false)} />}
+    {previewOpen && <PreviewPanel assets={selectedAssets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onClose={() => setPreviewOpen(false)} />}
+
     <aside className="tool-rail" aria-label="Canvas tools">
       <div className="tool-rail-group">
         <ToolbarButton label="Select" icon="select" active={tool === "select"} onClick={() => setTool("select")} />
@@ -426,6 +467,9 @@ export function App() {
         <span className="rail-divider" />
         <ToolbarButton label="Create Board" icon="board" active={tool === "board"} onClick={() => setTool("board")} />
         <ToolbarButton label="Import images" icon="import" active={tool === "import"} onClick={() => { setTool("select"); fileInput.current?.click(); }} />
+        <span className="rail-divider" />
+        <ToolbarButton label="Assets library" icon="folder" active={libraryOpen} onClick={() => setLibraryOpen((open) => !open)} />
+        <ToolbarButton label="Preview selection" icon="preview" active={previewOpen} onClick={() => { setPreviewOpen(true); setCarouselIndex(0); }} />
       </div>
       <div className="tool-rail-bottom"><span className="shortcut-hint">{spaceHeld ? "PAN" : "SPACE"}</span></div>
     </aside>
@@ -460,6 +504,8 @@ export function App() {
             {selectedBoards.length === 1 && <button type="button" onClick={() => void run({ type: "toggle-board-lock", id: selectedBoards[0].id })}><Icon name={selectedBoards[0].locked ? "unlock" : "lock"} size={15} />{selectedBoards[0].locked ? "Unlock" : "Lock"}</button>}
             {selectedAssets.length > 1 && <button type="button" onClick={() => run({ type: "group-selection" })}><Icon name="group" size={15} />Group</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "create-board-from-selection" })}><Icon name="board" size={15} />Board</button>}
+            {selectedAssets.length === 1 && <button type="button" onClick={() => void saveToLibrary(selectedAssets[0])}><Icon name="folder" size={15} />Save</button>}
+            {selectedAssets.length > 0 && <button type="button" onClick={() => { setPreviewOpen(true); setCarouselIndex(0); }}><Icon name="preview" size={15} />Preview</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}
             <button type="button" className="danger-action" onClick={() => run({ type: "delete-selection" })}><Icon name="trash" size={15} /></button>
           </div>

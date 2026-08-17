@@ -84,6 +84,14 @@ _Avoid_: project selector
 The local collection of named Canvases available to this workspace. Each Canvas keeps its own Assets, Boards, Selection, Groups, and spatial arrangement.
 _Avoid_: remote project list
 
+**Asset library**:
+A workspace-wide local collection of reusable Assets that can be inserted into any Canvas without depending on that Canvas's membership.
+_Avoid_: asset folder, cloud library
+
+**Preview**:
+A temporary contextual view of the current Selection that shows how one or more Assets read in a YouTube or carousel surface without changing the Canvas arrangement.
+_Avoid_: export, mockup
+
 **Board creation**:
 A Board is created by dragging the Board tool across the Canvas to define its size. A newly created Board has a white surface and an editable initial title.
 _Avoid_: auto-generated group

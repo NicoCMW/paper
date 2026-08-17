@@ -2,6 +2,7 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import { readFile } from "node:fs/promises";
 import { extname, join } from "node:path";
 import { createWorkspace } from "../domain/workspace";
+import { libraryAssetFrom, libraryInsertionPoint } from "../domain/asset-library";
 import type { Asset } from "../domain/model";
 import { CanvasMcpAdapter } from "./mcp";
 import { LocalWorkspaceStore } from "./storage";
@@ -43,6 +44,38 @@ const server = createServer(async (request, response) => {
     if (request.method === "OPTIONS") { response.writeHead(204, { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Allow-Methods": "GET,POST,OPTIONS" }); return response.end(); }
     if (url.pathname === "/api/state" && request.method === "GET") return sendJson(response, 200, workspace.getState());
     if (url.pathname === "/api/canvases" && request.method === "GET") return sendJson(response, 200, workspace.getCanvases());
+    if (url.pathname === "/api/library" && request.method === "GET") return sendJson(response, 200, { assets: workspace.getLibrary() });
+    if (url.pathname === "/api/library/save" && request.method === "POST") {
+      const body = await readJson(request);
+      const source = workspace.getState().assets.find((asset) => asset.id === String(body.assetId ?? ""));
+      if (!source) return sendJson(response, 404, { error: "The selected Asset does not exist on the active Canvas." });
+      const item = libraryAssetFrom(source, typeof body.name === "string" ? body.name : source.name);
+      const assets = workspace.addLibraryAsset(item);
+      await store.save(workspace.getDocument());
+      return sendJson(response, 200, { assets, saved: assets.find((asset) => asset.path === source.path) });
+    }
+    if (url.pathname === "/api/library/insert" && request.method === "POST") {
+      const body = await readJson(request);
+      const item = workspace.getLibrary().find((asset) => asset.id === String(body.libraryAssetId ?? ""));
+      if (!item) return sendJson(response, 404, { error: "The library Asset does not exist." });
+      const state = workspace.getState();
+      const point = libraryInsertionPoint(state, item);
+      const asset: Asset = {
+        id: crypto.randomUUID(),
+        name: item.name,
+        mime: item.mime,
+        path: item.path,
+        x: Number(body.x ?? point.x),
+        y: Number(body.y ?? point.y),
+        width: item.width,
+        height: item.height,
+        origin: "imported",
+        createdAt: new Date().toISOString(),
+      };
+      const next = workspace.dispatch({ type: "import-asset", asset });
+      await store.save(workspace.getDocument());
+      return sendJson(response, 200, { state: next, assets: workspace.getLibrary(), inserted: asset });
+    }
     if (url.pathname === "/api/canvas/create" && request.method === "POST") {
       const body = await readJson(request);
       const next = workspace.createCanvas(String(body.name ?? ""));

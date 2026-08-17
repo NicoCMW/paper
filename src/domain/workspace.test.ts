@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Asset } from "./model";
 import { createInitialState } from "./model";
 import { createWorkspace } from "./workspace";
+import { libraryAssetFrom } from "./asset-library";
 
 const asset = (id: string, x: number, y: number, width = 100, height = 60): Asset => ({
   id, name: `${id}.png`, mime: "image/png", path: `assets/${id}.png`, origin: "imported", createdAt: "2026-01-01T00:00:00.000Z", x, y, width, height,
@@ -92,5 +93,21 @@ describe("Canvas workspace", () => {
     expect(workspace.getState().assets[0].x).toBe(10);
     workspace.redo();
     expect(workspace.getState().assets[0].x).toBe(60);
+  });
+
+  it("keeps reusable library Assets independent from Canvas membership", () => {
+    const source = asset("logo", 20, 30, 180, 120);
+    const workspace = createWorkspace({ ...createInitialState(), assets: [source] });
+    const item = libraryAssetFrom(source, "Claude logo");
+
+    workspace.addLibraryAsset(item);
+    workspace.addLibraryAsset({ ...item, id: "duplicate-id" });
+
+    expect(workspace.getLibrary()).toHaveLength(1);
+    expect(workspace.getLibrary()[0]).toMatchObject({ name: "Claude logo", path: source.path, width: 180, height: 120 });
+    workspace.dispatch({ type: "select", ids: [source.id] });
+    workspace.dispatch({ type: "delete-selection" });
+    expect(workspace.getState().assets).toHaveLength(0);
+    expect(workspace.getLibrary()[0].path).toBe(source.path);
   });
 });

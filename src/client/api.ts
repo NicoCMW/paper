@@ -1,4 +1,4 @@
-import type { CanvasState, CanvasSummary, WorkspaceCommand } from "../domain/model";
+import type { CanvasState, CanvasSummary, LibraryAsset, WorkspaceCommand } from "../domain/model";
 
 const json = async <T>(response: Response): Promise<T> => {
   if (!response.ok) {
@@ -15,6 +15,26 @@ export const api = {
 
   async canvases(): Promise<CanvasSummary[]> {
     return json(await fetch("/api/canvases"));
+  },
+
+  async library(): Promise<{ assets: LibraryAsset[] }> {
+    return json(await fetch("/api/library"));
+  },
+
+  async saveLibraryAsset(assetId: string, name?: string): Promise<{ assets: LibraryAsset[]; saved: LibraryAsset }> {
+    return json(await fetch("/api/library/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ assetId, name }),
+    }));
+  },
+
+  async insertLibraryAsset(libraryAssetId: string, placement?: { x?: number; y?: number }): Promise<{ state: CanvasState; assets: LibraryAsset[] }> {
+    return json(await fetch("/api/library/insert", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ libraryAssetId, ...placement }),
+    }));
   },
 
   async createCanvas(name: string): Promise<{ state: CanvasState; canvases: CanvasSummary[] }> {

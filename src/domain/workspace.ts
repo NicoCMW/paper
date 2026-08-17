@@ -1,4 +1,4 @@
-import type { Asset, Board, CanvasState, CanvasSummary, EntityId, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
+import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
 import { createInitialState } from "./model";
 
 type CanvasHistory = {
@@ -226,9 +226,9 @@ const documentFrom = (initial: CanvasState | WorkspaceDocument): WorkspaceDocume
     const activeCanvasId = canvases.some((canvas) => canvas.canvas.id === initial.activeCanvasId)
       ? initial.activeCanvasId
       : canvases[0].canvas.id;
-    return clone({ activeCanvasId, canvases });
+    return clone({ activeCanvasId, canvases, library: initial.library ?? [] });
   }
-  return { activeCanvasId: initial.canvas.id, canvases: [clone(initial)] };
+  return { activeCanvasId: initial.canvas.id, canvases: [clone(initial)], library: [] };
 };
 
 const activeCanvas = (document: WorkspaceDocument): CanvasState => {
@@ -275,6 +275,12 @@ export function createWorkspace(initial: CanvasState | WorkspaceDocument = creat
     getState: () => clone(activeCanvas(document)),
     getDocument: () => clone(document),
     getCanvases: () => summariesOf(document),
+    getLibrary: () => clone(document.library),
+    addLibraryAsset: (asset: LibraryAsset) => {
+      const existing = document.library.find((item) => item.path === asset.path);
+      if (!existing) document = { ...document, library: [...document.library, clone(asset)] };
+      return clone(document.library);
+    },
     dispatch: (command) => {
       const current = activeCanvas(document);
       const next = applyCommand(current, command);
@@ -288,7 +294,7 @@ export function createWorkspace(initial: CanvasState | WorkspaceDocument = creat
     createCanvas: (name) => {
       const title = name.trim() || `Canvas ${document.canvases.length + 1}`;
       const canvas = createInitialState({ id: crypto.randomUUID(), name: title });
-      document = { activeCanvasId: canvas.canvas.id, canvases: [...document.canvases, canvas] };
+      document = { activeCanvasId: canvas.canvas.id, canvases: [...document.canvases, canvas], library: document.library };
       return clone(canvas);
     },
     switchCanvas: (id) => {

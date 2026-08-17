@@ -17,6 +17,7 @@ const normalizeCanvas = (state: CanvasState): CanvasState => ({
 const normalizeDocument = (document: WorkspaceDocument): WorkspaceDocument => ({
   activeCanvasId: document.activeCanvasId,
   canvases: document.canvases.map(normalizeCanvas),
+  library: Array.isArray(document.library) ? document.library : [],
 });
 
 export class LocalWorkspaceStore {
@@ -25,10 +26,10 @@ export class LocalWorkspaceStore {
       const parsed = JSON.parse(await readFile(STATE_PATH, "utf8")) as CanvasState | WorkspaceDocument;
       if ("canvases" in parsed && Array.isArray(parsed.canvases)) return normalizeDocument(parsed);
       const legacy = parsed as CanvasState;
-      return normalizeDocument({ activeCanvasId: legacy.canvas.id, canvases: [legacy] });
+      return normalizeDocument({ activeCanvasId: legacy.canvas.id, canvases: [legacy], library: [] });
     } catch {
       const initial = createInitialState();
-      const document: WorkspaceDocument = { activeCanvasId: initial.canvas.id, canvases: [initial] };
+      const document: WorkspaceDocument = { activeCanvasId: initial.canvas.id, canvases: [initial], library: [] };
       await this.save(document);
       return document;
     }

@@ -30,6 +30,17 @@ export type Asset = Rect & {
   placement?: Placement;
 };
 
+export type LibraryAsset = {
+  id: EntityId;
+  name: string;
+  mime: string;
+  path: string;
+  width: number;
+  height: number;
+  createdAt: string;
+  sourceAssetId?: EntityId;
+};
+
 export type Board = Rect & {
   id: EntityId;
   title: string;
@@ -58,6 +69,7 @@ export type CanvasSummary = Canvas & {
 export type WorkspaceDocument = {
   activeCanvasId: EntityId;
   canvases: CanvasState[];
+  library: LibraryAsset[];
 };
 
 export type ImportAssetCommand = {
@@ -86,6 +98,8 @@ export type Workspace = {
   getState(): CanvasState;
   getDocument(): WorkspaceDocument;
   getCanvases(): CanvasSummary[];
+  getLibrary(): LibraryAsset[];
+  addLibraryAsset(asset: LibraryAsset): LibraryAsset[];
   dispatch(command: WorkspaceCommand): CanvasState;
   createCanvas(name: string): CanvasState;
   switchCanvas(id: EntityId): CanvasState;
