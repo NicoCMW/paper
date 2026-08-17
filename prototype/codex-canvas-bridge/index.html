@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codex Canvas Prototype</title>
+  <style>
+    :root { color-scheme: dark; --bg:#141518; --panel:#1d2025; --line:#343943; --muted:#9da5b3; --accent:#8ab4ff; --selected:#ffd166; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; background:var(--bg); color:#eef1f5; font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; }
+    header { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:18px 22px; border-bottom:1px solid var(--line); background:#17191d; }
+    h1 { margin:0; font-size:17px; letter-spacing:.02em; }
+    header p { margin:4px 0 0; color:var(--muted); font-size:12px; }
+    button, label.file-button { border:1px solid #4a5260; border-radius:7px; background:#262b33; color:#eef1f5; padding:8px 11px; cursor:pointer; font:inherit; }
+    button:hover, label.file-button:hover { border-color:var(--accent); }
+    .actions { display:flex; flex-wrap:wrap; gap:7px; }
+    input[type=file] { display:none; }
+    main { display:grid; grid-template-columns:minmax(0,1fr) 280px; min-height:calc(100vh - 78px); }
+    .workspace { padding:18px; min-width:0; }
+    .dropzone { display:flex; align-items:center; justify-content:center; min-height:72px; margin-bottom:14px; border:1px dashed #5b6575; border-radius:10px; color:var(--muted); text-align:center; }
+    .dropzone.over { border-color:var(--accent); color:#fff; background:#1b2635; }
+    .canvas-shell { height:calc(100vh - 190px); min-height:500px; overflow:auto; border:1px solid var(--line); border-radius:12px; background:#101114; }
+    .canvas { position:relative; width:2400px; height:1400px; background-image:linear-gradient(#20242b 1px,transparent 1px),linear-gradient(90deg,#20242b 1px,transparent 1px); background-size:24px 24px; }
+    .canvas-title { position:absolute; left:24px; top:18px; color:#697382; font-size:12px; pointer-events:none; }
+    .asset { position:absolute; overflow:hidden; border:2px solid transparent; border-radius:6px; background:#2a2f38; box-shadow:0 5px 18px #0008; cursor:pointer; }
+    .asset.selected { border-color:var(--selected); box-shadow:0 0 0 2px #ffd16644,0 5px 18px #0008; }
+    .asset img { display:block; width:100%; height:100%; object-fit:cover; }
+    .asset-name { position:absolute; left:0; right:0; bottom:0; padding:4px 6px; overflow:hidden; background:#000b; color:#fff; font-size:11px; text-overflow:ellipsis; white-space:nowrap; }
+    aside { padding:18px; border-left:1px solid var(--line); background:var(--panel); overflow:auto; }
+    aside h2 { margin:0 0 6px; font-size:13px; }
+    aside p, aside li { color:var(--muted); font-size:12px; }
+    aside ul { padding-left:18px; }
+    .state { margin-top:16px; padding-top:14px; border-top:1px solid var(--line); }
+    .state-list { display:grid; gap:7px; margin-top:8px; }
+    .state-item { padding:8px; border:1px solid var(--line); border-radius:7px; background:#181b20; }
+    .state-item strong { display:block; color:#fff; font-size:12px; }
+    .state-item small { color:var(--muted); }
+    .notice { margin-top:12px; padding:9px; border-radius:7px; background:#202a39; color:#c9dcff; font-size:12px; }
+    .provenance { margin-top:12px; color:#c9dcff; font-size:12px; }
+    @media (max-width:900px) { main { grid-template-columns:1fr; } aside { border-left:0; border-top:1px solid var(--line); } }
+  </style>
+</head>
+<body>
+  <header>
+    <div><h1>Codex Canvas — integration prototype</h1><p>The instruction lives in Codex. This screen owns local visual state.</p></div>
+    <div class="actions">
+      <label class="file-button">Import images<input id="file-input" type="file" accept="image/*" multiple></label>
+      <button data-action="group">Group selection</button>
+      <button data-action="undo">Undo</button>
+      <button data-action="redo">Redo</button>
+      <button data-action="new">New Canvas</button>
+    </div>
+  </header>
+  <main>
+    <section class="workspace">
+      <div id="dropzone" class="dropzone">Drop images here, or paste an image with ⌘V / Ctrl+V</div>
+      <div class="canvas-shell"><div id="canvas" class="canvas"><div class="canvas-title">Canvas workspace</div></div></div>
+    </section>
+    <aside>
+      <h2 id="canvas-name">Canvas</h2>
+      <p>Hold <strong>Shift</strong> while clicking to select multiple Assets. The order is kept internally; the second selected Asset is the placement anchor.</p>
+      <div class="notice">Connect Codex to <code>http://127.0.0.1:29980/mcp</code> and ask it to read the selected Assets.</div>
+      <div class="state"><h2>Current Selection</h2><div id="selection" class="state-list"><p>Nothing selected.</p></div></div>
+      <div class="state"><h2>Local state</h2><p id="counts">Loading…</p><div id="provenance" class="provenance"></div></div>
+    </aside>
+  </main>
+  <script>
+    const canvasEl = document.querySelector('#canvas');
+    const dropzone = document.querySelector('#dropzone');
+    const fileInput = document.querySelector('#file-input');
+    let state = { assets: [], selection: [] };
+
+    async function post(path, payload) {
+      const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+      const body = await response.json();
+      if (!response.ok || body.ok === false) throw new Error(body.error || 'Prototype action failed');
+      return body.state || state;
+    }
+
+    async function refresh() {
+      const response = await fetch('/ui/state', { cache:'no-store' });
+      state = await response.json();
+      render();
+    }
+
+    function render() {
+      document.querySelector('#canvas-name').textContent = state.canvas.name;
+      canvasEl.querySelectorAll('.asset').forEach(node => node.remove());
+      for (const asset of state.assets) {
+        const node = document.createElement('div');
+        node.className = 'asset' + (asset.selected ? ' selected' : '');
+        node.style.left = `${asset.x + 120}px`;
+        node.style.top = `${asset.y + 80}px`;
+        node.style.width = `${Math.max(160, Math.min(asset.width, 420))}px`;
+        node.style.height = `${Math.max(100, Math.min(asset.height, 260))}px`;
+        node.title = `${asset.id} — Shift-click to multi-select`;
+        const image = document.createElement('img');
+        image.src = `/assets/${asset.id}?v=${encodeURIComponent(asset.createdAt)}`;
+        image.alt = asset.name;
+        const name = document.createElement('div');
+        name.className = 'asset-name';
+        name.textContent = asset.name;
+        node.append(image, name);
+        node.addEventListener('click', async event => {
+          event.stopPropagation();
+          let next = event.shiftKey ? state.selection.slice() : [];
+          if (event.shiftKey && next.includes(asset.id)) next = next.filter(id => id !== asset.id);
+          else if (!next.includes(asset.id)) next.push(asset.id);
+          state = await post('/ui/select', { asset_ids: next });
+          render();
+        });
+        canvasEl.appendChild(node);
+      }
+      const selected = state.assets.filter(asset => state.selection.includes(asset.id));
+      const selection = document.querySelector('#selection');
+      selection.innerHTML = selected.length ? selected.map(asset => `<div class="state-item"><strong>${escapeHtml(asset.name)}</strong><small>${asset.id} · ${asset.width}×${asset.height}</small></div>`).join('') : '<p>Nothing selected.</p>';
+      document.querySelector('#counts').textContent = `${state.assets.length} Asset(s) · ${state.selection.length} selected · ${state.historyDepth} undo step(s) · ${state.redoDepth} redo step(s)`;
+      const generated = state.assets.filter(asset => asset.provenance).at(-1);
+      document.querySelector('#provenance').textContent = generated ? `Latest generated Asset: ${generated.id} · references ${generated.provenance.references.join(', ')}` : 'No generated Asset yet.';
+    }
+
+    function escapeHtml(value) { return value.replace(/[&<>'"]/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[character])); }
+    async function importFile(file) {
+      const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+      state = await post('/ui/import', { filename:file.name, data_url:dataUrl });
+      render();
+    }
+    async function importFiles(files) { for (const file of files) await importFile(file); }
+    fileInput.addEventListener('change', event => importFiles([...event.target.files]).catch(showError));
+    dropzone.addEventListener('dragover', event => { event.preventDefault(); dropzone.classList.add('over'); });
+    dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+    dropzone.addEventListener('drop', event => { event.preventDefault(); dropzone.classList.remove('over'); importFiles([...event.dataTransfer.files].filter(file => file.type.startsWith('image/'))).catch(showError); });
+    window.addEventListener('paste', event => { const files = [...event.clipboardData.items].filter(item => item.type.startsWith('image/')).map(item => item.getAsFile()).filter(Boolean); if (files.length) importFiles(files).catch(showError); });
+    document.querySelectorAll('[data-action]').forEach(button => button.addEventListener('click', async () => {
+      try {
+        const action = button.dataset.action;
+        const args = action === 'new' ? { name: window.prompt('Canvas name', 'New Canvas') || 'New Canvas' } : {};
+        state = await post('/ui/action', { name: action === 'group' ? 'canvas_group_selection' : action === 'undo' ? 'canvas_undo' : action === 'redo' ? 'canvas_redo' : 'canvas_create', arguments:args });
+        render();
+      } catch (error) { showError(error); }
+    }));
+    function showError(error) { window.alert(error.message || String(error)); }
+    refresh().catch(showError);
+    setInterval(() => refresh().catch(() => {}), 1000);
+  </script>
+</body>
+</html>
