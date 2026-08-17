@@ -17,6 +17,7 @@ type Interaction =
   | { kind: "note"; pointerId: number; start: Point; current: Point }
   | { kind: "pan"; pointerId: number; start: Point; origin: Point }
   | { kind: "resize-assets"; pointerId: number; anchor: ResizeAnchor; start: Point; scale: number }
+  | { kind: "resize-note"; pointerId: number; noteId: EntityId; anchor: ResizeAnchor; start: Point; dw: number; dh: number }
   | { kind: "resize-board"; pointerId: number; boardId: EntityId; anchor: ResizeAnchor; start: Point; dw: number; dh: number };
 
 const WORLD_WIDTH = 6000;
@@ -292,6 +293,12 @@ export function App() {
   const previewRect = useCallback((item: Asset | Board | Note): Rect => {
     let rect: Rect = { x: item.x, y: item.y, width: item.width, height: item.height };
     if (interaction?.kind === "move" && activeMoveIds.has(item.id)) rect = { ...rect, x: rect.x + interaction.dx, y: rect.y + interaction.dy };
+    if (interaction?.kind === "resize-note" && item.id === interaction.noteId) {
+      if (interaction.anchor.includes("right")) rect.width = Math.max(140, item.width + interaction.dw);
+      if (interaction.anchor.includes("left")) { const width = Math.max(140, item.width - interaction.dw); rect.x = item.x + item.width - width; rect.width = width; }
+      if (interaction.anchor.includes("bottom")) rect.height = Math.max(72, item.height + interaction.dh);
+      if (interaction.anchor.includes("top")) { const height = Math.max(72, item.height - interaction.dh); rect.y = item.y + item.height - height; rect.height = height; }
+    }
     if (interaction?.kind === "resize-assets" && [...selectedAssets, ...selectedNotes].some((selected) => selected.id === item.id)) {
       const bounds = boundsOf([...selectedAssets, ...selectedNotes]);
       if (bounds) {
@@ -369,6 +376,7 @@ export function App() {
       const startDistance = Math.max(1, Math.hypot(interaction.start.x - center.x, interaction.start.y - center.y));
       setInteraction({ ...interaction, scale: clamp(Math.hypot(point.x - center.x, point.y - center.y) / startDistance, 0.1, 8) });
     }
+    if (interaction.kind === "resize-note") setInteraction({ ...interaction, dw: point.x - interaction.start.x, dh: point.y - interaction.start.y });
     if (interaction.kind === "resize-board") setInteraction({ ...interaction, dw: point.x - interaction.start.x, dh: point.y - interaction.start.y });
   };
 
@@ -382,6 +390,9 @@ export function App() {
         }
         if (completed.kind === "resize-assets" && Math.abs(completed.scale - 1) > 0.005) {
           await run({ type: "resize-selection", scale: completed.scale });
+        }
+        if (completed.kind === "resize-note" && (Math.abs(completed.dw) > 0.5 || Math.abs(completed.dh) > 0.5)) {
+          await run({ type: "resize-note", id: completed.noteId, anchor: completed.anchor, dw: completed.dw, dh: completed.dh });
         }
         if (completed.kind === "resize-board" && (Math.abs(completed.dw) > 0.5 || Math.abs(completed.dh) > 0.5)) {
           await run({ type: "resize-board", id: completed.boardId, anchor: completed.anchor, dw: completed.dw, dh: completed.dh });
@@ -404,7 +415,7 @@ export function App() {
             width: Math.max(140, drawn.width),
             height: Math.max(72, drawn.height),
           };
-          const note: Note = { id: crypto.randomUUID(), ...rect, text: "", fontSize: 16, createdAt: new Date().toISOString() };
+          const note: Note = { id: crypto.randomUUID(), ...rect, text: "", fontSize: 16, backgroundColor: "#252525", textColor: "#e4e4df", createdAt: new Date().toISOString() };
           const next = await run({ type: "create-note", note });
           if (next) { setEditingNoteId(note.id); setNoteDraft(""); }
           setTool("select");
@@ -420,6 +431,10 @@ export function App() {
     event.preventDefault(); event.stopPropagation();
     if (!selectionBounds || (selectedAssets.length === 0 && selectedNotes.length === 0)) return;
     viewportRef.current?.setPointerCapture(event.pointerId);
+    if (selectedAssets.length === 0 && selectedNotes.length === 1 && selectedBoards.length === 0) {
+      setInteraction({ kind: "resize-note", pointerId: event.pointerId, noteId: selectedNotes[0].id, anchor, start: toWorld(event), dw: 0, dh: 0 });
+      return;
+    }
     setInteraction({ kind: "resize-assets", pointerId: event.pointerId, anchor, start: toWorld(event), scale: 1 });
   };
 
@@ -464,6 +479,9 @@ export function App() {
   const commitBoardTitle = (board: Board) => { run({ type: "update-board-title", id: board.id, title: boardDraft.trim() || board.title }); setEditingBoardId(null); };
   const startEditingNote = (note: Note) => { setEditingNoteId(note.id); setNoteDraft(note.text); };
   const commitNoteText = (note: Note) => { void run({ type: "update-note-text", id: note.id, text: noteDraft }); setEditingNoteId(null); };
+  const updateNoteStyle = (note: Note, style: Pick<Note, "fontSize" | "backgroundColor" | "textColor">) => {
+    void run({ type: "update-note-style", id: note.id, ...style });
+  };
 
   const switchCanvas = async (id: string) => {
     setError(null);
@@ -591,7 +609,7 @@ export function App() {
           const rect = previewRect(note);
           const selected = state.selection.includes(note.id);
           const editing = editingNoteId === note.id;
-          return <div key={note.id} data-entity-id={note.id} className={`note${selected ? " is-selected" : ""}`} style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: selected ? 9 : 6, fontSize: note.fontSize }} onPointerDown={(event) => beginMove(event, note.id, "note")} onDoubleClick={(event) => { event.stopPropagation(); startEditingNote(note); }}>
+          return <div key={note.id} data-entity-id={note.id} className={`note${selected ? " is-selected" : ""}`} style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: selected ? 9 : 6, fontSize: note.fontSize, color: note.textColor, background: note.backgroundColor }} onPointerDown={(event) => beginMove(event, note.id, "note")} onDoubleClick={(event) => { event.stopPropagation(); startEditingNote(note); }}>
             {editing ? <textarea autoFocus className="note-editor" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onPointerDown={(event) => event.stopPropagation()} onBlur={() => commitNoteText(note)} onKeyDown={(event) => { if (event.key === "Escape") { setEditingNoteId(null); setNoteDraft(note.text); } if ((event.metaKey || event.ctrlKey) && event.key === "Enter") commitNoteText(note); }} /> : <span className={!note.text ? "is-empty" : undefined}>{note.text || "Write a note…"}</span>}
           </div>;
         })}
@@ -600,7 +618,7 @@ export function App() {
         {notePreview && <div className="note-preview" style={{ left: notePreview.x, top: notePreview.y, width: Math.max(140, notePreview.width), height: Math.max(72, notePreview.height) }} />}
         {toolbarBounds && state.selection.length > 0 && <div className="selection-overlay" style={{ left: toolbarBounds.x, top: toolbarBounds.y, width: toolbarBounds.width, height: toolbarBounds.height }}>
           {(selectedAssets.length > 0 || selectedNotes.length > 0) && (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
-          <div className="selection-toolbar" style={{ transform: `scale(${1 / view.zoom})` }} onPointerDown={(event) => event.stopPropagation()}>
+          <div className="selection-toolbar" style={{ transform: `translateX(-50%) scale(${1 / view.zoom})` }} onPointerDown={(event) => event.stopPropagation()}>
             <span className="selection-count">{state.selection.length} selected</span>
             {selectedBoards.length === 1 && <button type="button" onClick={() => void run({ type: "toggle-board-lock", id: selectedBoards[0].id })}><Icon name={selectedBoards[0].locked ? "unlock" : "lock"} size={15} />{selectedBoards[0].locked ? "Unlock" : "Lock"}</button>}
             {selectedAssets.length > 1 && <button type="button" onClick={() => run({ type: "group-selection" })}><Icon name="group" size={15} />Group</button>}
@@ -608,6 +626,12 @@ export function App() {
             {selectedAssets.length === 1 && <button type="button" onClick={() => void saveToLibrary(selectedAssets[0])}><Icon name="folder" size={15} />Save</button>}
             {selectedAssets.length === 1 && <button type="button" onClick={() => void copyAssetToClipboard(selectedAssets[0])}><Icon name="copy" size={15} />Copy</button>}
             {selectedAssets.length === 1 && <button type="button" onClick={() => downloadAsset(selectedAssets[0])}><Icon name="download" size={15} />Download</button>}
+            {selectedNotes.length === 1 && <>
+              <label className="note-style-field" title="Text color"><span>Text</span><input type="color" aria-label="Note text color" value={selectedNotes[0].textColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: selectedNotes[0].backgroundColor, textColor: event.target.value })} /></label>
+              <label className="note-style-field" title="Background color"><span>Fill</span><input type="color" aria-label="Note background color" value={selectedNotes[0].backgroundColor === "transparent" ? "#252525" : selectedNotes[0].backgroundColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: event.target.value, textColor: selectedNotes[0].textColor })} /></label>
+              <button type="button" className={selectedNotes[0].backgroundColor === "transparent" ? "is-toggle-active" : undefined} onClick={() => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: selectedNotes[0].backgroundColor === "transparent" ? "#252525" : "transparent", textColor: selectedNotes[0].textColor })}>Transparent</button>
+              <label className="note-style-field note-font-size" title="Font size"><span>Size</span><input type="number" min="8" max="96" step="1" aria-label="Note font size" value={selectedNotes[0].fontSize} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: Number(event.target.value), backgroundColor: selectedNotes[0].backgroundColor, textColor: selectedNotes[0].textColor })} /></label>
+            </>}
             {selectedAssets.length > 0 && <button type="button" onClick={openPreview}><Icon name="preview" size={15} />Preview</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}
             <button type="button" className="danger-action" onClick={() => run({ type: "delete-selection" })}><Icon name="trash" size={15} /></button>

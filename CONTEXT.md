@@ -13,7 +13,7 @@ A visual item that can live on a Canvas, such as an imported image or a generate
 _Avoid_: file, picture
 
 **Note**:
-Editable text placed directly on a Canvas. A Note is spatial, persistent, and independently selectable; it is not an Asset, Board, or comment.
+Editable text placed directly on a Canvas. A Note is spatial, persistent, and independently selectable, with its own font size, text color, and background (including transparent); it is not an Asset, Board, or comment.
 _Avoid_: comment, text file
 
 **Text tool**:

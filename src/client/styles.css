@@ -87,9 +87,9 @@ button { color: inherit; }
 .note:active { cursor: grabbing; }
 .note:hover { border-color: rgba(255,255,255,.35); }
 .note.is-selected { border-color: var(--selection); box-shadow: 0 0 0 1px rgba(140,185,255,.2); }
-.note > span { display: block; width: 100%; height: 100%; overflow: auto; }
+.note > span { display: block; width: 100%; height: 100%; overflow: hidden; }
 .note > span.is-empty { color: #777772; }
-.note-editor { width: 100%; height: 100%; padding: 0; border: 0; outline: 0; resize: none; color: inherit; background: transparent; font: inherit; line-height: inherit; }
+.note-editor { width: 100%; height: 100%; padding: 0; border: 0; outline: 0; resize: none; overflow: hidden; color: inherit; background: transparent; font: inherit; line-height: inherit; }
 .resize-handle { position: absolute; width: 8px; height: 8px; padding: 0; border: 1px solid #263d61; border-radius: 2px; background: var(--selection); pointer-events: auto; cursor: nwse-resize; }
 .resize-handle.top-left { left: -5px; top: -5px; cursor: nwse-resize; }
 .resize-handle.top-right { right: -5px; top: -5px; cursor: nesw-resize; }
@@ -97,11 +97,17 @@ button { color: inherit; }
 .resize-handle.bottom-right { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .selection-overlay { position: absolute; z-index: 15; pointer-events: none; border: 1px solid rgba(140,185,255,.78); }
 .selection-overlay > .resize-handle { pointer-events: auto; }
-.selection-toolbar { position: absolute; left: 0; bottom: calc(100% + 13px); transform-origin: bottom left; min-height: 30px; padding: 3px; display: flex; align-items: center; gap: 2px; border: 1px solid rgba(255,255,255,.13); border-radius: 7px; background: #202020; box-shadow: 0 8px 24px rgba(0,0,0,.25); pointer-events: auto; white-space: nowrap; }
+.selection-toolbar { position: absolute; left: 50%; bottom: calc(100% + 13px); transform-origin: bottom center; min-height: 30px; padding: 3px; display: flex; align-items: center; gap: 2px; border: 1px solid rgba(255,255,255,.13); border-radius: 7px; background: #202020; box-shadow: 0 8px 24px rgba(0,0,0,.25); pointer-events: auto; white-space: nowrap; }
 .selection-count { padding: 0 7px; color: #8f8f8b; font-size: 10px; }
 .selection-toolbar button { min-height: 24px; padding: 0 7px; display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 4px; color: #d3d3ce; background: transparent; font-size: 10px; cursor: pointer; }
 .selection-toolbar button:hover { color: white; background: rgba(255,255,255,.1); }
 .selection-toolbar button.danger-action { padding: 0 6px; color: #c9a0a0; }
+.selection-toolbar button.is-toggle-active { color: #e2e2dd; background: rgba(140,185,255,.2); }
+.note-style-field { min-height: 24px; padding: 0 5px; display: inline-flex; align-items: center; gap: 5px; border-left: 1px solid rgba(255,255,255,.1); color: #8f8f8b; font-size: 9px; }
+.note-style-field span { color: #8f8f8b; }
+.note-style-field input[type="color"] { width: 17px; height: 17px; padding: 1px; border: 1px solid rgba(255,255,255,.16); border-radius: 3px; background: transparent; cursor: pointer; }
+.note-style-field input[type="number"] { width: 39px; height: 19px; padding: 0 3px; border: 1px solid rgba(255,255,255,.12); border-radius: 3px; outline: none; color: #d7d7d2; background: #292929; font-size: 9px; font-variant-numeric: tabular-nums; }
+.note-style-field input[type="number"]:focus { border-color: var(--selection); }
 .marquee { position: absolute; z-index: 20; border: 1px solid var(--selection); background: rgba(140,185,255,.1); pointer-events: none; }
 .board-preview { position: absolute; z-index: 2; border: 1px dashed rgba(255,255,255,.78); border-radius: 7px; background: rgba(255,255,255,.1); pointer-events: none; }
 .note-preview { position: absolute; z-index: 20; border: 1px dashed rgba(255,255,255,.7); border-radius: 6px; background: rgba(255,255,255,.06); pointer-events: none; }

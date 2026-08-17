@@ -9,7 +9,7 @@ const asset = (id: string, x: number, y: number, width = 100, height = 60): Asse
 });
 
 const note = (id: string, x = 10, y = 20): Note => ({
-  id, text: "First note", x, y, width: 240, height: 100, fontSize: 16, createdAt: "2026-01-01T00:00:00.000Z",
+  id, text: "First note", x, y, width: 240, height: 100, fontSize: 16, backgroundColor: "#252525", textColor: "#e4e4df", createdAt: "2026-01-01T00:00:00.000Z",
 });
 
 describe("Canvas workspace", () => {
@@ -105,9 +105,10 @@ describe("Canvas workspace", () => {
     expect(workspace.getState()).toMatchObject({ notes: [note("note-1")], selection: ["note-1"] });
 
     workspace.dispatch({ type: "update-note-text", id: "note-1", text: "Updated note" });
+    workspace.dispatch({ type: "update-note-style", id: "note-1", fontSize: 24, backgroundColor: "transparent", textColor: "#8cb9ff" });
     workspace.dispatch({ type: "move-selection", ids: ["note-1"], dx: 40, dy: 25 });
-    workspace.dispatch({ type: "resize-selection", scale: 2 });
-    expect(workspace.getState().notes[0]).toMatchObject({ text: "Updated note", width: 480, height: 200 });
+    workspace.dispatch({ type: "resize-note", id: "note-1", anchor: "bottom-right", dw: 100, dh: 40 });
+    expect(workspace.getState().notes[0]).toMatchObject({ text: "Updated note", fontSize: 24, backgroundColor: "transparent", textColor: "#8cb9ff", width: 340, height: 140 });
 
     workspace.dispatch({ type: "delete-selection" });
     expect(workspace.getState().notes).toHaveLength(0);

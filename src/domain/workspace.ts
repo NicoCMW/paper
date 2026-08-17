@@ -63,6 +63,16 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
       return { ...previous, notes: [...previous.notes, command.note], selection: [command.note.id] };
     case "update-note-text":
       return { ...previous, notes: previous.notes.map((note) => note.id === command.id ? { ...note, text: command.text } : note) };
+    case "update-note-style":
+      return {
+        ...previous,
+        notes: previous.notes.map((note) => note.id === command.id ? {
+          ...note,
+          ...(command.fontSize === undefined ? {} : { fontSize: Math.min(96, Math.max(8, command.fontSize)) }),
+          ...(command.backgroundColor === undefined ? {} : { backgroundColor: command.backgroundColor }),
+          ...(command.textColor === undefined ? {} : { textColor: command.textColor }),
+        } : note),
+      };
     case "select": {
       const selection = command.additive
         ? command.ids.reduce<EntityId[]>(
@@ -159,6 +169,26 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
       });
       return { ...previous, assets, notes };
     }
+    case "resize-note": {
+      const note = previous.notes.find((candidate) => candidate.id === command.id);
+      if (!note) return previous;
+      let { x, y, width, height } = note;
+      const minWidth = 140;
+      const minHeight = 72;
+      if (command.anchor.includes("right")) width = Math.max(minWidth, width + command.dw);
+      if (command.anchor.includes("left")) {
+        const nextWidth = Math.max(minWidth, width - command.dw);
+        x += width - nextWidth;
+        width = nextWidth;
+      }
+      if (command.anchor.includes("bottom")) height = Math.max(minHeight, height + command.dh);
+      if (command.anchor.includes("top")) {
+        const nextHeight = Math.max(minHeight, height - command.dh);
+        y += height - nextHeight;
+        height = nextHeight;
+      }
+      return { ...previous, notes: previous.notes.map((candidate) => candidate.id === note.id ? { ...candidate, x, y, width, height } : candidate) };
+    }
     case "resize-board": {
       const board = previous.boards.find((candidate) => candidate.id === command.id);
       if (!board || board.locked) return previous;
@@ -245,7 +275,15 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
   }
 }
 
-const normalizeCanvasState = (state: CanvasState): CanvasState => ({ ...state, notes: state.notes ?? [] });
+const normalizeCanvasState = (state: CanvasState): CanvasState => ({
+  ...state,
+  notes: (state.notes ?? []).map((note) => ({
+    ...note,
+    backgroundColor: note.backgroundColor ?? "#252525",
+    textColor: note.textColor ?? "#e4e4df",
+    fontSize: note.fontSize ?? 16,
+  })),
+});
 
 const documentFrom = (initial: CanvasState | WorkspaceDocument): WorkspaceDocument => {
   if ("canvases" in initial) {
