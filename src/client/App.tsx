@@ -465,7 +465,7 @@ export function App() {
     </header>
 
     {libraryOpen && <AssetLibraryPanel assets={library} onInsert={(asset) => void insertFromLibrary(asset)} onClose={() => setLibraryOpen(false)} />}
-    {previewOpen && <PreviewPanel assets={selectedAssets} contextAssets={state.assets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} youtubeTitle={youtubeTitle} youtubeDark={youtubeDark} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onYoutubeTitleChange={setYoutubeTitle} onYoutubeDarkChange={setYoutubeDark} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && <PreviewPanel assets={selectedAssets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} youtubeTitle={youtubeTitle} youtubeDark={youtubeDark} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onYoutubeTitleChange={setYoutubeTitle} onYoutubeDarkChange={setYoutubeDark} onClose={() => setPreviewOpen(false)} />}
 
     <aside className="tool-rail" aria-label="Canvas tools">
       <div className="tool-rail-group">

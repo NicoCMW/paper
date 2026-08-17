@@ -6,7 +6,6 @@ type PreviewDevice = "desktop" | "mobile";
 
 type PreviewPanelProps = {
   assets: Asset[];
-  contextAssets: Asset[];
   mode: PreviewMode;
   device: PreviewDevice;
   carouselIndex: number;
@@ -27,19 +26,16 @@ type SampleVideo = {
   age: string;
   duration: string;
   tone: "red" | "blue" | "sand" | "green" | "ink" | "orange";
+  samplePath: string;
 };
 
 const SAMPLE_VIDEOS: SampleVideo[] = [
-  { title: "10 Productivity Hacks That Actually Work", channel: "Focus Lab", views: "512K views", age: "2 days ago", duration: "10:22", tone: "red" },
-  { title: "Bali Travel Guide 2024 (Budget Tips)", channel: "Wander More", views: "845K views", age: "3 days ago", duration: "12:31", tone: "blue" },
-  { title: "30 Min Full Body Workout (No Equipment)", channel: "Stronger Everyday", views: "1.2M views", age: "5 days ago", duration: "28:19", tone: "ink" },
-  { title: "Study With Me (Lo-fi Beats)", channel: "LoFi Library", views: "2.3M views", age: "2 weeks ago", duration: "3:02:14", tone: "sand" },
-  { title: "5 Morning Habits That Change Everything", channel: "Better Days", views: "612K views", age: "1 day ago", duration: "8:47", tone: "orange" },
-  { title: "Beginner's Guide to Investing", channel: "Money Basics", views: "732K views", age: "4 days ago", duration: "11:18", tone: "green" },
-  { title: "Minimal Desk Setup Tour", channel: "Your Channel", views: "98K views", age: "5 days ago", duration: "6:21", tone: "blue" },
-  { title: "Weekly Plan That Works", channel: "Small Systems", views: "79K views", age: "2 days ago", duration: "7:15", tone: "sand" },
-  { title: "How I Built a Side Business", channel: "Maker Notes", views: "312K views", age: "3 days ago", duration: "16:40", tone: "green" },
-  { title: "Cinematic Japan Vlog", channel: "Jake Yoshida", views: "415K views", age: "6 days ago", duration: "9:21", tone: "ink" },
+  { title: "Workout At Home 10 Min Effective Exercises", channel: "Fitness at Home", views: "2.1M views", age: "4 years ago", duration: "10:22", tone: "red", samplePath: "/youtube-samples/youtube-workout-routine.jpg" },
+  { title: "Makkah Travel Vlog — Full History & Amazing Facts", channel: "Info Ahsan", views: "846K views", age: "1 year ago", duration: "12:31", tone: "blue", samplePath: "/youtube-samples/youtube-makkah-travel.jpg" },
+  { title: "Travel to Jeddah — Amazing Facts & Documentary", channel: "Travel Stories", views: "312K views", age: "2 years ago", duration: "28:19", tone: "ink", samplePath: "/youtube-samples/youtube-jeddah-travel.jpg" },
+  { title: "Riyadh Travel Guide — Places You Should See", channel: "Wander More", views: "1.2M views", age: "3 years ago", duration: "3:02:14", tone: "sand", samplePath: "/youtube-samples/youtube-riyadh-travel.jpg" },
+  { title: "Madina Travel Vlog — Amazing Facts & Documentary", channel: "Open Road", views: "612K views", age: "1 year ago", duration: "8:47", tone: "orange", samplePath: "/youtube-samples/youtube-madina-travel.jpg" },
+  { title: "Workout Music Mix — Gym Motivation", channel: "Max Oazo", views: "732K views", age: "2 years ago", duration: "11:18", tone: "green", samplePath: "/youtube-samples/youtube-workout-mix.jpg" },
 ];
 
 function CloseMark() {
@@ -70,7 +66,7 @@ type YoutubeVideo = SampleVideo & { id: string; asset?: Asset; isTarget?: boolea
 
 function YoutubeThumb({ video, className = "" }: { video: YoutubeVideo; className?: string }) {
   return <div className={`yt-thumb ${video.isTarget ? "is-target" : ""} ${className}`}>
-    {video.asset ? <SelectedImage asset={video.asset} /> : <SampleThumbnail video={video} />}
+    {video.asset ? <SelectedImage asset={video.asset} /> : <img src={video.samplePath} alt="" draggable={false} onError={(event) => { event.currentTarget.style.display = "none"; }} />}
     <span className="yt-duration">{video.duration}</span>
   </div>;
 }
@@ -93,13 +89,12 @@ function YoutubeSurface({ title, videos, variant, dark }: { title: string; video
   return <section className={className}><h3>{title}</h3><div className="yt-surface-content">{videos.slice(0, variant === "home-large" ? 6 : 4).map((video, index) => <VideoCard key={video.id} video={video} index={index} variant={variant === "home-large" ? "grid" : "row"} />)}</div></section>;
 }
 
-function YoutubePreview({ selected, contextAssets, title, dark, device, onTitleChange, onDarkChange, onDeviceChange }: { selected: Asset[]; contextAssets: Asset[]; title: string; dark: boolean; device: PreviewDevice; onTitleChange: (title: string) => void; onDarkChange: (dark: boolean) => void; onDeviceChange: (device: PreviewDevice) => void }) {
+function YoutubePreview({ selected, title, dark, device, onTitleChange, onDarkChange, onDeviceChange }: { selected: Asset[]; title: string; dark: boolean; device: PreviewDevice; onTitleChange: (title: string) => void; onDarkChange: (dark: boolean) => void; onDeviceChange: (device: PreviewDevice) => void }) {
   const target = selected[0];
   if (!target) return <EmptyPreview />;
-  const collateralAssets = contextAssets.filter((asset) => asset.id !== target.id).slice(0, 3);
   const videos: YoutubeVideo[] = [
     { ...SAMPLE_VIDEOS[0], id: target.id, title: title.trim() || target.name.replace(/\.[^.]+$/, ""), channel: "Your Channel", views: "123K views", age: "1 hour ago", asset: target, isTarget: true },
-    ...SAMPLE_VIDEOS.slice(1).map((video, index) => ({ ...video, id: `sample-${index}`, asset: collateralAssets[index] })),
+    ...SAMPLE_VIDEOS.slice(1).map((video, index) => ({ ...video, id: `youtube-sample-${index}` })),
   ];
   return <div className={`youtube-simulator ${dark ? "is-dark" : ""}`}>
     <aside className="youtube-settings">
@@ -139,11 +134,11 @@ function CarouselPreview({ assets, index, onIndexChange }: { assets: Asset[]; in
   </div>;
 }
 
-export function PreviewPanel({ assets, contextAssets, mode, device, carouselIndex, youtubeTitle, youtubeDark, onModeChange, onDeviceChange, onCarouselIndexChange, onYoutubeTitleChange, onYoutubeDarkChange, onClose }: PreviewPanelProps) {
+export function PreviewPanel({ assets, mode, device, carouselIndex, youtubeTitle, youtubeDark, onModeChange, onDeviceChange, onCarouselIndexChange, onYoutubeTitleChange, onYoutubeDarkChange, onClose }: PreviewPanelProps) {
   return <aside className={`preview-panel preview-${mode}`} aria-label="Preview" onPointerDown={(event) => event.stopPropagation()}>
     <div className="preview-panel-header"><strong>Preview</strong><button type="button" className="panel-close" onClick={onClose} aria-label="Close Preview"><CloseMark /></button></div>
     <div className="preview-mode-tabs"><button type="button" className={mode === "youtube" ? "is-active" : ""} onClick={() => onModeChange("youtube")}>YouTube</button><button type="button" className={mode === "carousel" ? "is-active" : ""} onClick={() => onModeChange("carousel")}>Carousel</button></div>
-    <div className="preview-panel-content">{mode === "youtube" ? <YoutubePreview selected={assets} contextAssets={contextAssets} title={youtubeTitle} dark={youtubeDark} device={device} onTitleChange={onYoutubeTitleChange} onDarkChange={onYoutubeDarkChange} onDeviceChange={onDeviceChange} /> : <><div className="preview-device-row"><span>Context</span><div className="segmented-control"><button type="button" className={device === "desktop" ? "is-active" : ""} onClick={() => onDeviceChange("desktop")}>Desktop</button><button type="button" className={device === "mobile" ? "is-active" : ""} onClick={() => onDeviceChange("mobile")}>Mobile</button></div></div><CarouselPreview assets={assets} index={carouselIndex} onIndexChange={onCarouselIndexChange} /></>}</div>
+    <div className="preview-panel-content">{mode === "youtube" ? <YoutubePreview selected={assets} title={youtubeTitle} dark={youtubeDark} device={device} onTitleChange={onYoutubeTitleChange} onDarkChange={onYoutubeDarkChange} onDeviceChange={onDeviceChange} /> : <><div className="preview-device-row"><span>Context</span><div className="segmented-control"><button type="button" className={device === "desktop" ? "is-active" : ""} onClick={() => onDeviceChange("desktop")}>Desktop</button><button type="button" className={device === "mobile" ? "is-active" : ""} onClick={() => onDeviceChange("mobile")}>Mobile</button></div></div><CarouselPreview assets={assets} index={carouselIndex} onIndexChange={onCarouselIndexChange} /></>}</div>
     <div className="preview-panel-footer">Preview uses the current Canvas selection.</div>
   </aside>;
 }
