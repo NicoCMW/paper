@@ -33,6 +33,17 @@ const syncMembership = (state: CanvasState, asset: Asset): Asset => {
   return { ...asset, parentBoardId: board?.id };
 };
 
+const lockedBoardFor = (state: CanvasState, asset: Asset): Board | undefined => {
+  if (!asset.parentBoardId) return undefined;
+  const board = state.boards.find((candidate) => candidate.id === asset.parentBoardId);
+  return board?.locked ? board : undefined;
+};
+
+const syncBoardMembers = (boards: Board[], assets: Asset[]): Board[] => boards.map((board) => ({
+  ...board,
+  memberAssetIds: assets.filter((asset) => asset.parentBoardId === board.id).map((asset) => asset.id),
+}));
+
 const selectIntersecting = (state: CanvasState, rect: Rect, additive: boolean): CanvasState => {
   const hitIds = state.assets.filter((asset) => intersects(asset, rect)).map((asset) => asset.id);
   const selection = additive
@@ -57,20 +68,19 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
     case "select-rect":
       return selectIntersecting(previous, command.rect, Boolean(command.additive));
     case "move-asset": {
+      const current = previous.assets.find((asset) => asset.id === command.id);
+      if (!current || lockedBoardFor(previous, current)) return previous;
       const assets = previous.assets.map((asset) =>
         asset.id === command.id
           ? syncMembership(previous, { ...asset, x: asset.x + command.dx, y: asset.y + command.dy })
           : asset,
       );
-      const boards = previous.boards.map((board) => ({
-        ...board,
-        memberAssetIds: assets.filter((asset) => asset.parentBoardId === board.id).map((asset) => asset.id),
-      }));
+      const boards = syncBoardMembers(previous.boards, assets);
       return { ...previous, assets, boards };
     }
     case "move-board": {
       const board = previous.boards.find((candidate) => candidate.id === command.id);
-      if (!board) return previous;
+      if (!board || board.locked) return previous;
       const memberIds = new Set(board.memberAssetIds);
       return {
         ...previous,
@@ -87,28 +97,29 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
       };
     }
     case "move-selection": {
-      const selectedIds = new Set(previous.selection);
+      const selectedIds = new Set(command.ids ?? previous.selection);
       const selectedBoards = previous.boards.filter((board) => selectedIds.has(board.id));
-      const movedMemberIds = new Set(selectedBoards.flatMap((board) => board.memberAssetIds));
+      const lockedMemberIds = new Set(selectedBoards.filter((board) => board.locked).flatMap((board) => board.memberAssetIds));
+      const movedMemberIds = new Set(selectedBoards.filter((board) => !board.locked).flatMap((board) => board.memberAssetIds));
       const movedAssets = previous.assets.map((asset) => {
-        if (!selectedIds.has(asset.id) && !movedMemberIds.has(asset.id)) return asset;
+        if (lockedMemberIds.has(asset.id) || (!selectedIds.has(asset.id) && !movedMemberIds.has(asset.id))) return asset;
+        if (selectedIds.has(asset.id) && lockedBoardFor(previous, asset)) return asset;
         return { ...asset, x: asset.x + command.dx, y: asset.y + command.dy };
       });
       const boards = previous.boards.map((board) =>
-        selectedIds.has(board.id) ? { ...board, x: board.x + command.dx, y: board.y + command.dy } : board,
+        selectedIds.has(board.id) && !board.locked ? { ...board, x: board.x + command.dx, y: board.y + command.dy } : board,
       );
       const movedState = { ...previous, assets: movedAssets, boards };
       const assets = movedAssets.map((asset) =>
-        selectedIds.has(asset.id) ? syncMembership(movedState, asset) : asset,
+        selectedIds.has(asset.id) && !movedMemberIds.has(asset.id) && !lockedMemberIds.has(asset.id) && !lockedBoardFor(previous, asset)
+          ? syncMembership(movedState, asset)
+          : asset,
       );
-      const nextBoards = boards.map((board) => ({
-        ...board,
-        memberAssetIds: assets.filter((asset) => asset.parentBoardId === board.id).map((asset) => asset.id),
-      }));
-      return { ...previous, assets, boards: nextBoards };
+      const nextBoards = syncBoardMembers(boards, assets);
+      return { ...previous, assets, boards: nextBoards, selection: command.ids ?? previous.selection };
     }
     case "resize-selection": {
-      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
+      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id) && !lockedBoardFor(previous, asset));
       if (selected.length === 0 || command.scale <= 0) return previous;
       const bounds = boundsOf(selected);
       const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
@@ -128,7 +139,7 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
     }
     case "resize-board": {
       const board = previous.boards.find((candidate) => candidate.id === command.id);
-      if (!board) return previous;
+      if (!board || board.locked) return previous;
       const minWidth = 160;
       const minHeight = 120;
       let { x, y, width, height } = board;
@@ -147,16 +158,21 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
       return { ...previous, boards: previous.boards.map((candidate) => candidate.id === board.id ? { ...candidate, x, y, width, height } : candidate) };
     }
     case "create-board": {
+      const memberAssetIds = previous.assets.filter((asset) => contains(command.rect, asset)).map((asset) => asset.id);
       const board: Board = {
         id: crypto.randomUUID(),
         title: command.title ?? "Untitled Board",
         ...command.rect,
-        memberAssetIds: [],
+        memberAssetIds,
+        locked: false,
       };
-      return { ...previous, boards: [...previous.boards, board], selection: [board.id] };
+      const assets = previous.assets.map((asset) => memberAssetIds.includes(asset.id) ? { ...asset, parentBoardId: board.id } : asset);
+      return { ...previous, assets, boards: syncBoardMembers([...previous.boards, board], assets), selection: [board.id] };
     }
     case "update-board-title":
       return { ...previous, boards: previous.boards.map((board) => board.id === command.id ? { ...board, title: command.title || "Untitled Board" } : board) };
+    case "toggle-board-lock":
+      return { ...previous, boards: previous.boards.map((board) => board.id === command.id ? { ...board, locked: !board.locked } : board) };
     case "create-board-from-selection": {
       const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
       if (selected.length === 0) return previous;
@@ -170,11 +186,12 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
         width: bounds.width + margin * 2,
         height: bounds.height + margin * 2,
         memberAssetIds: selected.map((asset) => asset.id),
+        locked: false,
       };
       const assets = previous.assets.map((asset) =>
         previous.selection.includes(asset.id) ? { ...asset, parentBoardId: board.id } : asset,
       );
-      return { ...previous, assets, boards: [...previous.boards, board], selection: [board.id] };
+      return { ...previous, assets, boards: syncBoardMembers([...previous.boards, board], assets), selection: [board.id] };
     }
     case "group-selection": {
       const ids = previous.selection.filter((id) => previous.assets.some((asset) => asset.id === id));
@@ -184,7 +201,8 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
     case "duplicate-selection": {
       const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
       const duplicates = selected.map((asset) => ({ ...asset, id: crypto.randomUUID(), x: asset.x + 32, y: asset.y + 32 }));
-      return { ...previous, assets: [...previous.assets, ...duplicates], selection: duplicates.map((asset) => asset.id) };
+      const assets = [...previous.assets, ...duplicates];
+      return { ...previous, assets, boards: syncBoardMembers(previous.boards, assets), selection: duplicates.map((asset) => asset.id) };
     }
     case "delete-selection": {
       const deleted = new Set(previous.selection);

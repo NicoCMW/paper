@@ -9,13 +9,23 @@ const DATA_DIR = process.env.PAPER_DATA_DIR
 const ASSETS_DIR = join(DATA_DIR, "assets");
 const STATE_PATH = join(DATA_DIR, "state.json");
 
+const normalizeCanvas = (state: CanvasState): CanvasState => ({
+  ...state,
+  boards: state.boards.map((board) => ({ ...board, locked: Boolean(board.locked) })),
+});
+
+const normalizeDocument = (document: WorkspaceDocument): WorkspaceDocument => ({
+  activeCanvasId: document.activeCanvasId,
+  canvases: document.canvases.map(normalizeCanvas),
+});
+
 export class LocalWorkspaceStore {
   async load(): Promise<WorkspaceDocument> {
     try {
       const parsed = JSON.parse(await readFile(STATE_PATH, "utf8")) as CanvasState | WorkspaceDocument;
-      if ("canvases" in parsed && Array.isArray(parsed.canvases)) return parsed;
+      if ("canvases" in parsed && Array.isArray(parsed.canvases)) return normalizeDocument(parsed);
       const legacy = parsed as CanvasState;
-      return { activeCanvasId: legacy.canvas.id, canvases: [legacy] };
+      return normalizeDocument({ activeCanvasId: legacy.canvas.id, canvases: [legacy] });
     } catch {
       const initial = createInitialState();
       const document: WorkspaceDocument = { activeCanvasId: initial.canvas.id, canvases: [initial] };

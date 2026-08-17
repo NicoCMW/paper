@@ -89,8 +89,12 @@ A Board is created by dragging the Board tool across the Canvas to define its si
 _Avoid_: auto-generated group
 
 **Board membership**:
-An Asset belongs to a Board when it is placed inside that Board. Moving a Board moves its member Assets; moving an Asset out removes membership; moving an Asset into a Board adds membership. Boards do not auto-layout or clip their Assets.
+An Asset belongs to a Board when it is placed inside that Board. Moving an unlocked Board moves its member Assets; moving an Asset out removes membership; moving an Asset into a Board adds membership. A locked Board keeps its boundary and member Assets together until it is explicitly unlocked. Boards do not auto-layout or clip their Assets.
 _Avoid_: layer, folder
+
+**Board lock**:
+A Board lock is an explicit protection on a Board and its member Assets. While locked, the Board and its members can still be selected, but they cannot be moved or resized until the lock is removed.
+_Avoid_: hidden group state
 
 **Board title**:
 The visible title of a Board is edited in place by double-clicking it.

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { Asset, Board, CanvasState, CanvasSummary, EntityId, Point, Rect, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
 
@@ -64,6 +64,8 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   if (name === "group") return <svg {...common}><rect x="3.5" y="5" width="9" height="9" rx="1.2" /><rect x="11.5" y="10" width="9" height="9" rx="1.2" /></svg>;
   if (name === "duplicate") return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="1.5" /><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" /></svg>;
   if (name === "trash") return <svg {...common}><path d="M4.5 7h15M9 4h6l1 3H8l1-3ZM7 7l.7 13h8.6L17 7M10 10.5v6M14 10.5v6" /></svg>;
+  if (name === "lock") return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></svg>;
+  if (name === "unlock") return <svg {...common}><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 7-2.7" /></svg>;
   if (name === "chevron") return <svg {...common}><path d="m7 9 5 5 5-5" /></svg>;
   if (name === "undo") return <svg {...common}><path d="M9 8 4 12l5 4" /><path d="M5 12h8a6 6 0 0 1 6 6" /></svg>;
   return <svg {...common}><circle cx="12" cy="12" r="8" /></svg>;
@@ -95,11 +97,11 @@ export function App() {
       .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Could not load Canvas"));
   }, []);
 
-  const run = useCallback((command: WorkspaceCommand) => {
+  const run = useCallback((command: WorkspaceCommand): Promise<CanvasState | undefined> => {
     setError(null);
-    api.dispatch(command)
-      .then(async (next) => { setState(next); setCanvases(await api.canvases()); })
-      .catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "Canvas action failed"));
+    return api.dispatch(command)
+      .then(async (next) => { setState(next); setCanvases(await api.canvases()); return next; })
+      .catch((reason: unknown) => { setError(reason instanceof Error ? reason.message : "Canvas action failed"); return undefined; });
   }, []);
 
   const runImport = useCallback(async (files: File[], origin?: Point) => {
@@ -156,20 +158,30 @@ export function App() {
     });
   }, []);
 
-  const handleWheel = useCallback((event: ReactWheelEvent<HTMLDivElement>) => {
-    // macOS trackpad pinch is exposed as a ctrl-wheel gesture. Plain two-finger
-    // scrolling stays untouched so it can continue to pan the surrounding page.
-    if (!event.ctrlKey && !event.metaKey) return;
+  const handleWheel = useCallback((event: WheelEvent) => {
+    // Use a native non-passive listener so macOS pinch cannot fall through to
+    // browser page zoom. A plain two-finger scroll pans the Canvas instead.
     event.preventDefault();
-    const viewport = viewportRef.current?.getBoundingClientRect();
-    if (!viewport) return;
-    const focus = { x: event.clientX - viewport.left, y: event.clientY - viewport.top };
-    setView((current) => {
-      const zoom = clamp(current.zoom * Math.exp(-event.deltaY * 0.01), MIN_ZOOM, MAX_ZOOM);
-      const worldPoint = { x: (focus.x - current.x) / current.zoom, y: (focus.y - current.y) / current.zoom };
-      return { zoom, x: focus.x - worldPoint.x * zoom, y: focus.y - worldPoint.y * zoom };
-    });
+    if (event.ctrlKey || event.metaKey) {
+      const viewport = viewportRef.current?.getBoundingClientRect();
+      if (!viewport) return;
+      const focus = { x: event.clientX - viewport.left, y: event.clientY - viewport.top };
+      setView((current) => {
+        const zoom = clamp(current.zoom * Math.exp(-event.deltaY * 0.01), MIN_ZOOM, MAX_ZOOM);
+        const worldPoint = { x: (focus.x - current.x) / current.zoom, y: (focus.y - current.y) / current.zoom };
+        return { zoom, x: focus.x - worldPoint.x * zoom, y: focus.y - worldPoint.y * zoom };
+      });
+      return;
+    }
+    setView((current) => ({ ...current, x: current.x - event.deltaX, y: current.y - event.deltaY }));
   }, []);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.addEventListener("wheel", handleWheel, { passive: false });
+    return () => viewport.removeEventListener("wheel", handleWheel);
+  }, [handleWheel, Boolean(state)]);
 
   const selectedAssets = useMemo(() => state?.assets.filter((asset) => state.selection.includes(asset.id)) ?? [], [state]);
   const selectedBoards = useMemo(() => state?.boards.filter((board) => state.selection.includes(board.id)) ?? [], [state]);
@@ -208,16 +220,29 @@ export function App() {
     event.preventDefault();
     event.stopPropagation();
     const isSelected = state?.selection.includes(id) ?? false;
+    const locked = kind === "board"
+      ? state?.boards.some((board) => board.id === id && board.locked) ?? false
+      : state?.assets.some((asset) => asset.id === id && asset.parentBoardId && state.boards.some((board) => board.id === asset.parentBoardId && board.locked)) ?? false;
+    if (locked) {
+      if (event.shiftKey) { void run({ type: "select", ids: [id], additive: true }); return; }
+      if (!isSelected) {
+        setState((current) => current ? { ...current, selection: [id] } : current);
+        void run({ type: "select", ids: [id] });
+      }
+      return;
+    }
     if (event.shiftKey) {
-      if (isSelected) { run({ type: "select", ids: [id], additive: true }); return; }
+      if (isSelected) { void run({ type: "select", ids: [id], additive: true }); return; }
+      viewportRef.current?.setPointerCapture(event.pointerId);
       const ids = [...(state?.selection ?? []), id];
       setState((current) => current ? { ...current, selection: ids } : current);
-      run({ type: "select", ids });
+      void run({ type: "select", ids });
       setInteraction({ kind: "move", pointerId: event.pointerId, start: toWorld(event), ids, dx: 0, dy: 0 });
       return;
     }
     const ids = isSelected ? (state?.selection ?? [id]) : [id];
-    if (!isSelected) { setState((current) => current ? { ...current, selection: ids } : current); run({ type: "select", ids }); }
+    viewportRef.current?.setPointerCapture(event.pointerId);
+    if (!isSelected) { setState((current) => current ? { ...current, selection: ids } : current); void run({ type: "select", ids }); }
     setInteraction({ kind: "move", pointerId: event.pointerId, start: toWorld(event), ids, dx: 0, dy: 0 });
   };
 
@@ -250,20 +275,33 @@ export function App() {
 
   const handlePointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     if (!interaction || interaction.pointerId !== event.pointerId || !state) return;
-    if (interaction.kind === "move" && (Math.abs(interaction.dx) > 0.5 || Math.abs(interaction.dy) > 0.5)) run({ type: "move-selection", dx: interaction.dx, dy: interaction.dy });
-    if (interaction.kind === "resize-assets" && Math.abs(interaction.scale - 1) > 0.005) run({ type: "resize-selection", scale: interaction.scale });
-    if (interaction.kind === "resize-board" && (Math.abs(interaction.dw) > 0.5 || Math.abs(interaction.dh) > 0.5)) run({ type: "resize-board", id: interaction.boardId, anchor: interaction.anchor, dw: interaction.dw, dh: interaction.dh });
-    if (interaction.kind === "marquee") {
-      const rect = normalizeRect(interaction.start, interaction.current);
-      if (rect.width > 4 || rect.height > 4) run({ type: "select-rect", rect, additive: event.shiftKey });
-      else if (!event.shiftKey) run({ type: "select", ids: [] });
-    }
-    if (interaction.kind === "board") {
-      const rect = normalizeRect(interaction.start, interaction.current);
-      if (rect.width > 80 && rect.height > 60) run({ type: "create-board", rect, title: "Untitled Board" });
-      setTool("select");
-    }
-    setInteraction(null);
+    const completed = interaction;
+    const finish = async () => {
+      try {
+        if (completed.kind === "move" && (Math.abs(completed.dx) > 0.5 || Math.abs(completed.dy) > 0.5)) {
+          await run({ type: "move-selection", ids: completed.ids, dx: completed.dx, dy: completed.dy });
+        }
+        if (completed.kind === "resize-assets" && Math.abs(completed.scale - 1) > 0.005) {
+          await run({ type: "resize-selection", scale: completed.scale });
+        }
+        if (completed.kind === "resize-board" && (Math.abs(completed.dw) > 0.5 || Math.abs(completed.dh) > 0.5)) {
+          await run({ type: "resize-board", id: completed.boardId, anchor: completed.anchor, dw: completed.dw, dh: completed.dh });
+        }
+        if (completed.kind === "marquee") {
+          const rect = normalizeRect(completed.start, completed.current);
+          if (rect.width > 4 || rect.height > 4) await run({ type: "select-rect", rect, additive: event.shiftKey });
+          else if (!event.shiftKey) await run({ type: "select", ids: [] });
+        }
+        if (completed.kind === "board") {
+          const rect = normalizeRect(completed.start, completed.current);
+          if (rect.width > 80 && rect.height > 60) await run({ type: "create-board", rect, title: "Untitled Board" });
+          setTool("select");
+        }
+      } finally {
+        setInteraction(null);
+      }
+    };
+    void finish();
   };
 
   const startAssetResize = (event: ReactPointerEvent, anchor: ResizeAnchor) => {
@@ -392,7 +430,7 @@ export function App() {
       <div className="tool-rail-bottom"><span className="shortcut-hint">{spaceHeld ? "PAN" : "SPACE"}</span></div>
     </aside>
 
-    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onWheel={handleWheel} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
       <div className="world" style={{ width: WORLD_WIDTH, height: WORLD_HEIGHT, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         {state.boards.map((board) => {
           const rect = previewRect(board);
@@ -401,6 +439,7 @@ export function App() {
             <div className="board-title" onPointerDown={(event) => event.stopPropagation()} onDoubleClick={(event) => { event.stopPropagation(); startEditingBoard(board); }}>
               {editingBoardId === board.id ? <input autoFocus value={boardDraft} onChange={(event) => setBoardDraft(event.target.value)} onBlur={() => commitBoardTitle(board)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setEditingBoardId(null); }} /> : board.title}
             </div>
+            {board.locked && <button type="button" className="board-lock" aria-label="Unlock Board" title="Unlock Board" onPointerDown={(event) => event.stopPropagation()} onClick={() => void run({ type: "toggle-board-lock", id: board.id })}><Icon name="lock" size={12} /></button>}
             {selected && <div className="board-resize-handles" onPointerDown={(event) => event.stopPropagation()}>{(["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize board ${anchor}`} onPointerDown={(event) => startBoardResize(event, board, anchor)} />)}</div>}
           </div>;
         })}
@@ -418,6 +457,7 @@ export function App() {
           {selectedAssets.length > 0 && (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
           <div className="selection-toolbar" style={{ transform: `scale(${1 / view.zoom})` }} onPointerDown={(event) => event.stopPropagation()}>
             <span className="selection-count">{state.selection.length} selected</span>
+            {selectedBoards.length === 1 && <button type="button" onClick={() => void run({ type: "toggle-board-lock", id: selectedBoards[0].id })}><Icon name={selectedBoards[0].locked ? "unlock" : "lock"} size={15} />{selectedBoards[0].locked ? "Unlock" : "Lock"}</button>}
             {selectedAssets.length > 1 && <button type="button" onClick={() => run({ type: "group-selection" })}><Icon name="group" size={15} />Group</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "create-board-from-selection" })}><Icon name="board" size={15} />Board</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}

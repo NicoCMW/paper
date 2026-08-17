@@ -34,6 +34,7 @@ export type Board = Rect & {
   id: EntityId;
   title: string;
   memberAssetIds: EntityId[];
+  locked: boolean;
 };
 
 export type Canvas = {
@@ -70,11 +71,12 @@ export type WorkspaceCommand =
   | { type: "select-rect"; rect: Rect; additive?: boolean }
   | { type: "move-asset"; id: EntityId; dx: number; dy: number }
   | { type: "move-board"; id: EntityId; dx: number; dy: number }
-  | { type: "move-selection"; dx: number; dy: number }
+  | { type: "move-selection"; dx: number; dy: number; ids?: EntityId[] }
   | { type: "resize-selection"; scale: number }
   | { type: "resize-board"; id: EntityId; dw: number; dh: number; anchor: "top-left" | "top-right" | "bottom-left" | "bottom-right" }
   | { type: "create-board"; rect: Rect; title?: string }
   | { type: "update-board-title"; id: EntityId; title: string }
+  | { type: "toggle-board-lock"; id: EntityId }
   | { type: "create-board-from-selection"; title?: string }
   | { type: "group-selection" }
   | { type: "duplicate-selection" }

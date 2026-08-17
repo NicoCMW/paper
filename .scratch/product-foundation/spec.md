@@ -13,6 +13,7 @@ Deliver the first real Codex Canvas surface after the throwaway MCP bridge. The 
 - Create a Board by dragging the Board tool, edit its title, or create a Board around the current Asset selection.
 - List, create, rename, and switch between multiple named local Canvases without losing the Assets in the previous Canvas.
 - Move a Board with its member Assets. An Asset entering a Board becomes a member; leaving it removes membership.
+- Lock or unlock a Board from its contextual controls. A locked Board and its member Assets remain selectable but cannot be moved or resized.
 - Use contextual Group, Board, Duplicate, and Delete actions without a permanent inspector.
 - Pan with Space-drag or the Pan tool, and zoom the Canvas content with the compact top-right control or the macOS trackpad pinch gesture while the fixed app chrome remains visible.
 - Display a Codex-generated Asset at a size bounded by the largest selected Reference image, even when the generated source image is high resolution.

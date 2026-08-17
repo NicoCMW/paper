@@ -8,6 +8,29 @@ const asset = (id: string, x: number, y: number, width = 100, height = 60): Asse
 });
 
 describe("Canvas workspace", () => {
+  it("assigns Assets drawn inside a Board and keeps the Board unlocked by default", () => {
+    const workspace = createWorkspace({ ...createInitialState(), assets: [asset("a", 10, 10), asset("b", 150, 10)] });
+
+    workspace.dispatch({ type: "create-board", rect: { x: 0, y: 0, width: 300, height: 120 }, title: "References" });
+    const state = workspace.getState();
+
+    expect(state.boards[0]).toMatchObject({ title: "References", locked: false, memberAssetIds: ["a", "b"] });
+    expect(state.assets.every((item) => item.parentBoardId === state.boards[0].id)).toBe(true);
+  });
+
+  it("locks a Board together with its member Assets", () => {
+    const workspace = createWorkspace({ ...createInitialState(), assets: [asset("a", 10, 10)] });
+    workspace.dispatch({ type: "create-board", rect: { x: 0, y: 0, width: 180, height: 120 } });
+    const board = workspace.getState().boards[0];
+    workspace.dispatch({ type: "toggle-board-lock", id: board.id });
+
+    workspace.dispatch({ type: "move-selection", ids: ["a"], dx: 80, dy: 40 });
+    expect(workspace.getState().assets[0]).toMatchObject({ x: 10, y: 10 });
+
+    workspace.dispatch({ type: "move-selection", ids: [board.id], dx: 80, dy: 40 });
+    expect(workspace.getState().boards[0]).toMatchObject({ x: 0, y: 0 });
+  });
+
   it("creates, renames, and switches between named Canvases", () => {
     const workspace = createWorkspace();
     const firstId = workspace.getState().canvas.id;
