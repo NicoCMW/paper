@@ -1,5 +1,5 @@
+import { NOTE_MIN_HEIGHT, NOTE_MIN_WIDTH, createInitialState } from "./model";
 import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Note, Rect, Workspace, WorkspaceCommand, WorkspaceDocument } from "./model";
-import { createInitialState } from "./model";
 
 type CanvasHistory = {
   past: CanvasState[];
@@ -71,6 +71,7 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
           ...(command.fontSize === undefined ? {} : { fontSize: Math.min(96, Math.max(8, command.fontSize)) }),
           ...(command.backgroundColor === undefined ? {} : { backgroundColor: command.backgroundColor }),
           ...(command.textColor === undefined ? {} : { textColor: command.textColor }),
+          ...(command.textAlign === undefined ? {} : { textAlign: command.textAlign }),
         } : note),
       };
     case "select": {
@@ -173,8 +174,8 @@ function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasS
       const note = previous.notes.find((candidate) => candidate.id === command.id);
       if (!note) return previous;
       let { x, y, width, height } = note;
-      const minWidth = 140;
-      const minHeight = 72;
+      const minWidth = NOTE_MIN_WIDTH;
+      const minHeight = NOTE_MIN_HEIGHT;
       if (command.anchor.includes("right")) width = Math.max(minWidth, width + command.dw);
       if (command.anchor.includes("left")) {
         const nextWidth = Math.max(minWidth, width - command.dw);
@@ -282,6 +283,7 @@ const normalizeCanvasState = (state: CanvasState): CanvasState => ({
     backgroundColor: note.backgroundColor ?? "#252525",
     textColor: note.textColor ?? "#e4e4df",
     fontSize: note.fontSize ?? 16,
+    textAlign: note.textAlign ?? "left",
   })),
 });
 

@@ -4,6 +4,15 @@ export type Point = { x: number; y: number };
 
 export type Rect = Point & { width: number; height: number };
 
+export type ResizeAnchor = "top-left" | "top" | "top-right" | "right" | "bottom-right" | "bottom" | "bottom-left" | "left";
+
+export type CornerResizeAnchor = Extract<ResizeAnchor, "top-left" | "top-right" | "bottom-left" | "bottom-right">;
+
+export type NoteTextAlign = "left" | "center" | "right";
+
+export const NOTE_MIN_WIDTH = 64;
+export const NOTE_MIN_HEIGHT = 36;
+
 export type AssetOrigin = "imported" | "codex";
 
 export type AssetProvenance = {
@@ -36,6 +45,7 @@ export type Note = Rect & {
   fontSize: number;
   backgroundColor: string;
   textColor: string;
+  textAlign: NoteTextAlign;
   createdAt: string;
 };
 
@@ -91,15 +101,15 @@ export type WorkspaceCommand =
   | ImportAssetCommand
   | { type: "create-note"; note: Note }
   | { type: "update-note-text"; id: EntityId; text: string }
-  | { type: "update-note-style"; id: EntityId; fontSize?: number; backgroundColor?: string; textColor?: string }
+  | { type: "update-note-style"; id: EntityId; fontSize?: number; backgroundColor?: string; textColor?: string; textAlign?: NoteTextAlign }
   | { type: "select"; ids: EntityId[]; additive?: boolean }
   | { type: "select-rect"; rect: Rect; additive?: boolean }
   | { type: "move-asset"; id: EntityId; dx: number; dy: number }
   | { type: "move-board"; id: EntityId; dx: number; dy: number }
   | { type: "move-selection"; dx: number; dy: number; ids?: EntityId[] }
   | { type: "resize-selection"; scale: number }
-  | { type: "resize-note"; id: EntityId; anchor: "top-left" | "top-right" | "bottom-left" | "bottom-right"; dw: number; dh: number }
-  | { type: "resize-board"; id: EntityId; dw: number; dh: number; anchor: "top-left" | "top-right" | "bottom-left" | "bottom-right" }
+  | { type: "resize-note"; id: EntityId; anchor: ResizeAnchor; dw: number; dh: number }
+  | { type: "resize-board"; id: EntityId; dw: number; dh: number; anchor: CornerResizeAnchor }
   | { type: "create-board"; rect: Rect; title?: string }
   | { type: "update-board-title"; id: EntityId; title: string }
   | { type: "toggle-board-lock"; id: EntityId }

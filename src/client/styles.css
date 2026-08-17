@@ -83,18 +83,22 @@ button { color: inherit; }
 .asset.is-generated::after { content: ""; position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: #9fbeff; box-shadow: 0 0 0 2px rgba(45,45,45,.55); }
 .asset-selection-meta { position: absolute; left: 0; top: calc(100% + 6px); display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.72); font-size: 10px; line-height: 14px; white-space: nowrap; pointer-events: none; }
 .asset-selection-meta span + span { color: #7f7f7a; }
-.note { position: absolute; overflow: hidden; padding: 13px 14px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; color: #e4e4df; background: rgba(37,37,37,.96); cursor: grab; line-height: 1.45; white-space: pre-wrap; touch-action: none; transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease); }
+.note { position: absolute; overflow: hidden; padding: 5px 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; color: #e4e4df; background: rgba(37,37,37,.96); cursor: grab; line-height: 1.45; white-space: pre; touch-action: none; transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease); }
 .note:active { cursor: grabbing; }
 .note:hover { border-color: rgba(255,255,255,.35); }
 .note.is-selected { border-color: var(--selection); box-shadow: 0 0 0 1px rgba(140,185,255,.2); }
-.note > span { display: block; width: 100%; height: 100%; overflow: hidden; }
+.note > span { display: block; width: 100%; height: 100%; overflow: hidden; white-space: pre; }
 .note > span.is-empty { color: #777772; }
-.note-editor { width: 100%; height: 100%; padding: 0; border: 0; outline: 0; resize: none; overflow: hidden; color: inherit; background: transparent; font: inherit; line-height: inherit; }
+.note-editor { width: 100%; height: 100%; padding: 0; border: 0; outline: 0; resize: none; overflow: hidden; color: inherit; background: transparent; font: inherit; line-height: inherit; white-space: pre; }
 .resize-handle { position: absolute; width: 8px; height: 8px; padding: 0; border: 1px solid #263d61; border-radius: 2px; background: var(--selection); pointer-events: auto; cursor: nwse-resize; }
 .resize-handle.top-left { left: -5px; top: -5px; cursor: nwse-resize; }
+.resize-handle.top { left: 50%; top: -5px; transform: translateX(-50%); cursor: ns-resize; }
 .resize-handle.top-right { right: -5px; top: -5px; cursor: nesw-resize; }
+.resize-handle.right { right: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
 .resize-handle.bottom-left { left: -5px; bottom: -5px; cursor: nesw-resize; }
+.resize-handle.bottom { left: 50%; bottom: -5px; transform: translateX(-50%); cursor: ns-resize; }
 .resize-handle.bottom-right { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.resize-handle.left { left: -5px; top: 50%; transform: translateY(-50%); cursor: ew-resize; }
 .selection-overlay { position: absolute; z-index: 15; pointer-events: none; border: 1px solid rgba(140,185,255,.78); }
 .selection-overlay > .resize-handle { pointer-events: auto; }
 .selection-toolbar { position: absolute; left: 50%; bottom: calc(100% + 13px); transform-origin: bottom center; min-height: 30px; padding: 3px; display: flex; align-items: center; gap: 2px; border: 1px solid rgba(255,255,255,.13); border-radius: 7px; background: #202020; box-shadow: 0 8px 24px rgba(0,0,0,.25); pointer-events: auto; white-space: nowrap; }
@@ -103,6 +107,8 @@ button { color: inherit; }
 .selection-toolbar button:hover { color: white; background: rgba(255,255,255,.1); }
 .selection-toolbar button.danger-action { padding: 0 6px; color: #c9a0a0; }
 .selection-toolbar button.is-toggle-active { color: #e2e2dd; background: rgba(140,185,255,.2); }
+.note-align-controls { min-height: 24px; padding: 0 3px; display: inline-flex; align-items: center; gap: 1px; border-left: 1px solid rgba(255,255,255,.1); }
+.note-align-controls button { width: 22px; min-height: 24px; padding: 0; justify-content: center; }
 .note-style-field { min-height: 24px; padding: 0 5px; display: inline-flex; align-items: center; gap: 5px; border-left: 1px solid rgba(255,255,255,.1); color: #8f8f8b; font-size: 9px; }
 .note-style-field span { color: #8f8f8b; }
 .note-style-field input[type="color"] { width: 17px; height: 17px; padding: 1px; border: 1px solid rgba(255,255,255,.16); border-radius: 3px; background: transparent; cursor: pointer; }

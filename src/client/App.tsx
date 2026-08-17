@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
-import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Note, Point, Rect, WorkspaceCommand } from "../domain/model";
+import { NOTE_MIN_HEIGHT, NOTE_MIN_WIDTH } from "../domain/model";
+import type { Asset, Board, CanvasState, CanvasSummary, CornerResizeAnchor, EntityId, LibraryAsset, Note, Point, Rect, ResizeAnchor, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
 import { AssetLibraryPanel, LIBRARY_ASSET_DRAG_MIME } from "./AssetLibraryPanel";
 import { PreviewPanel } from "./PreviewPanel";
@@ -8,8 +9,6 @@ type Tool = "select" | "pan" | "board" | "import" | "text";
 type PreviewMode = "youtube" | "carousel";
 type PreviewDevice = "desktop" | "mobile";
 type Viewport = { x: number; y: number; zoom: number };
-type ResizeAnchor = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
 type Interaction =
   | { kind: "move"; pointerId: number; start: Point; ids: EntityId[]; dx: number; dy: number }
   | { kind: "marquee"; pointerId: number; start: Point; current: Point }
@@ -18,7 +17,10 @@ type Interaction =
   | { kind: "pan"; pointerId: number; start: Point; origin: Point }
   | { kind: "resize-assets"; pointerId: number; anchor: ResizeAnchor; start: Point; scale: number }
   | { kind: "resize-note"; pointerId: number; noteId: EntityId; anchor: ResizeAnchor; start: Point; dw: number; dh: number }
-  | { kind: "resize-board"; pointerId: number; boardId: EntityId; anchor: ResizeAnchor; start: Point; dw: number; dh: number };
+  | { kind: "resize-board"; pointerId: number; boardId: EntityId; anchor: CornerResizeAnchor; start: Point; dw: number; dh: number };
+
+const cornerResizeAnchors: CornerResizeAnchor[] = ["top-left", "top-right", "bottom-left", "bottom-right"];
+const noteResizeAnchors: ResizeAnchor[] = ["top-left", "top", "top-right", "right", "bottom-right", "bottom", "bottom-left", "left"];
 
 const WORLD_WIDTH = 6000;
 const WORLD_HEIGHT = 4000;
@@ -66,6 +68,9 @@ function Icon({ name, size = 18 }: { name: string; size?: number }) {
   if (name === "board") return <svg {...common}><rect x="3.5" y="4" width="17" height="16" rx="1.5" /><path d="M7 8h10M7 12h6M7 16h8" /></svg>;
   if (name === "import") return <svg {...common}><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><path d="M4 15.5v3A2.5 2.5 0 0 0 6.5 21h11a2.5 2.5 0 0 0 2.5-2.5v-3" /></svg>;
   if (name === "text") return <svg {...common}><path d="M5 5h14M12 5v14M8.5 19h7" /></svg>;
+  if (name === "align-left") return <svg {...common}><path d="M5 6h14M5 10h10M5 14h14M5 18h10" /></svg>;
+  if (name === "align-center") return <svg {...common}><path d="M5 6h14M8 10h8M5 14h14M8 18h8" /></svg>;
+  if (name === "align-right") return <svg {...common}><path d="M5 6h14M9 10h10M5 14h14M9 18h10" /></svg>;
   if (name === "copy") return <svg {...common}><rect x="8" y="8" width="11" height="11" rx="1.5" /><path d="M5 15H4.5A1.5 1.5 0 0 1 3 13.5v-9A1.5 1.5 0 0 1 4.5 3h9A1.5 1.5 0 0 1 15 4.5V5" /></svg>;
   if (name === "download") return <svg {...common}><path d="M12 3v11m0 0 4-4m-4 4-4-4" /><path d="M4 17.5V20h16v-2.5" /></svg>;
   if (name === "plus") return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
@@ -294,10 +299,10 @@ export function App() {
     let rect: Rect = { x: item.x, y: item.y, width: item.width, height: item.height };
     if (interaction?.kind === "move" && activeMoveIds.has(item.id)) rect = { ...rect, x: rect.x + interaction.dx, y: rect.y + interaction.dy };
     if (interaction?.kind === "resize-note" && item.id === interaction.noteId) {
-      if (interaction.anchor.includes("right")) rect.width = Math.max(140, item.width + interaction.dw);
-      if (interaction.anchor.includes("left")) { const width = Math.max(140, item.width - interaction.dw); rect.x = item.x + item.width - width; rect.width = width; }
-      if (interaction.anchor.includes("bottom")) rect.height = Math.max(72, item.height + interaction.dh);
-      if (interaction.anchor.includes("top")) { const height = Math.max(72, item.height - interaction.dh); rect.y = item.y + item.height - height; rect.height = height; }
+      if (interaction.anchor.includes("right")) rect.width = Math.max(NOTE_MIN_WIDTH, item.width + interaction.dw);
+      if (interaction.anchor.includes("left")) { const width = Math.max(NOTE_MIN_WIDTH, item.width - interaction.dw); rect.x = item.x + item.width - width; rect.width = width; }
+      if (interaction.anchor.includes("bottom")) rect.height = Math.max(NOTE_MIN_HEIGHT, item.height + interaction.dh);
+      if (interaction.anchor.includes("top")) { const height = Math.max(NOTE_MIN_HEIGHT, item.height - interaction.dh); rect.y = item.y + item.height - height; rect.height = height; }
     }
     if (interaction?.kind === "resize-assets" && [...selectedAssets, ...selectedNotes].some((selected) => selected.id === item.id)) {
       const bounds = boundsOf([...selectedAssets, ...selectedNotes]);
@@ -412,10 +417,10 @@ export function App() {
           const rect = {
             x: drawn.x,
             y: drawn.y,
-            width: Math.max(140, drawn.width),
-            height: Math.max(72, drawn.height),
+            width: Math.max(NOTE_MIN_WIDTH, drawn.width),
+            height: Math.max(NOTE_MIN_HEIGHT, drawn.height),
           };
-          const note: Note = { id: crypto.randomUUID(), ...rect, text: "", fontSize: 16, backgroundColor: "#252525", textColor: "#e4e4df", createdAt: new Date().toISOString() };
+          const note: Note = { id: crypto.randomUUID(), ...rect, text: "", fontSize: 16, backgroundColor: "#252525", textColor: "#e4e4df", textAlign: "left", createdAt: new Date().toISOString() };
           const next = await run({ type: "create-note", note });
           if (next) { setEditingNoteId(note.id); setNoteDraft(""); }
           setTool("select");
@@ -438,7 +443,7 @@ export function App() {
     setInteraction({ kind: "resize-assets", pointerId: event.pointerId, anchor, start: toWorld(event), scale: 1 });
   };
 
-  const startBoardResize = (event: ReactPointerEvent, board: Board, anchor: ResizeAnchor) => {
+  const startBoardResize = (event: ReactPointerEvent, board: Board, anchor: CornerResizeAnchor) => {
     event.preventDefault(); event.stopPropagation();
     viewportRef.current?.setPointerCapture(event.pointerId);
     setInteraction({ kind: "resize-board", pointerId: event.pointerId, boardId: board.id, anchor, start: toWorld(event), dw: 0, dh: 0 });
@@ -479,7 +484,7 @@ export function App() {
   const commitBoardTitle = (board: Board) => { run({ type: "update-board-title", id: board.id, title: boardDraft.trim() || board.title }); setEditingBoardId(null); };
   const startEditingNote = (note: Note) => { setEditingNoteId(note.id); setNoteDraft(note.text); };
   const commitNoteText = (note: Note) => { void run({ type: "update-note-text", id: note.id, text: noteDraft }); setEditingNoteId(null); };
-  const updateNoteStyle = (note: Note, style: Pick<Note, "fontSize" | "backgroundColor" | "textColor">) => {
+  const updateNoteStyle = (note: Note, style: Partial<Pick<Note, "fontSize" | "backgroundColor" | "textColor" | "textAlign">>) => {
     void run({ type: "update-note-style", id: note.id, ...style });
   };
 
@@ -534,6 +539,7 @@ export function App() {
     ? boundsOf([...selectedAssets.map((asset) => previewRect(asset)), ...selectedBoards.map((board) => previewRect(board)), ...selectedNotes.map((note) => previewRect(note))])
     : selectionBounds;
   const toolbarBounds = displayedSelectionBounds;
+  const selectionResizeAnchors = selectedNotes.length === 1 && selectedAssets.length === 0 && selectedBoards.length === 0 ? noteResizeAnchors : cornerResizeAnchors;
 
   return <main className={`app-shell tool-${tool}${spaceHeld ? " is-space-held" : ""}`} onPaste={handlePaste} tabIndex={0}>
     <header className="topbar">
@@ -594,7 +600,7 @@ export function App() {
               {editingBoardId === board.id ? <input autoFocus value={boardDraft} onChange={(event) => setBoardDraft(event.target.value)} onBlur={() => commitBoardTitle(board)} onKeyDown={(event) => { if (event.key === "Enter") event.currentTarget.blur(); if (event.key === "Escape") setEditingBoardId(null); }} /> : board.title}
             </div>
             {board.locked && <button type="button" className="board-lock" aria-label="Unlock Board" title="Unlock Board" onPointerDown={(event) => event.stopPropagation()} onClick={() => void run({ type: "toggle-board-lock", id: board.id })}><Icon name="lock" size={12} /></button>}
-            {selected && <div className="board-resize-handles" onPointerDown={(event) => event.stopPropagation()}>{(["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize board ${anchor}`} onPointerDown={(event) => startBoardResize(event, board, anchor)} />)}</div>}
+            {selected && <div className="board-resize-handles" onPointerDown={(event) => event.stopPropagation()}>{cornerResizeAnchors.map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize board ${anchor}`} onPointerDown={(event) => startBoardResize(event, board, anchor)} />)}</div>}
           </div>;
         })}
         {state.assets.map((asset) => {
@@ -609,15 +615,15 @@ export function App() {
           const rect = previewRect(note);
           const selected = state.selection.includes(note.id);
           const editing = editingNoteId === note.id;
-          return <div key={note.id} data-entity-id={note.id} className={`note${selected ? " is-selected" : ""}`} style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: selected ? 9 : 6, fontSize: note.fontSize, color: note.textColor, background: note.backgroundColor }} onPointerDown={(event) => beginMove(event, note.id, "note")} onDoubleClick={(event) => { event.stopPropagation(); startEditingNote(note); }}>
-            {editing ? <textarea autoFocus className="note-editor" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onPointerDown={(event) => event.stopPropagation()} onBlur={() => commitNoteText(note)} onKeyDown={(event) => { if (event.key === "Escape") { setEditingNoteId(null); setNoteDraft(note.text); } if ((event.metaKey || event.ctrlKey) && event.key === "Enter") commitNoteText(note); }} /> : <span className={!note.text ? "is-empty" : undefined}>{note.text || "Write a note…"}</span>}
+          return <div key={note.id} data-entity-id={note.id} className={`note${selected ? " is-selected" : ""}`} style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, zIndex: selected ? 9 : 6, fontSize: note.fontSize, color: note.textColor, background: note.backgroundColor, textAlign: note.textAlign }} onPointerDown={(event) => beginMove(event, note.id, "note")} onDoubleClick={(event) => { event.stopPropagation(); startEditingNote(note); }}>
+            {editing ? <textarea autoFocus wrap="off" className="note-editor" value={noteDraft} onChange={(event) => setNoteDraft(event.target.value)} onPointerDown={(event) => event.stopPropagation()} onBlur={() => commitNoteText(note)} onKeyDown={(event) => { if (event.key === "Escape") { setEditingNoteId(null); setNoteDraft(note.text); } if ((event.metaKey || event.ctrlKey) && event.key === "Enter") commitNoteText(note); }} /> : <span className={!note.text ? "is-empty" : undefined}>{note.text || "Write a note…"}</span>}
           </div>;
         })}
         {marquee && <div className="marquee" style={{ left: marquee.x, top: marquee.y, width: marquee.width, height: marquee.height }} />}
         {boardPreview && <div className="board-preview" style={{ left: boardPreview.x, top: boardPreview.y, width: boardPreview.width, height: boardPreview.height }} />}
-        {notePreview && <div className="note-preview" style={{ left: notePreview.x, top: notePreview.y, width: Math.max(140, notePreview.width), height: Math.max(72, notePreview.height) }} />}
+        {notePreview && <div className="note-preview" style={{ left: notePreview.x, top: notePreview.y, width: Math.max(NOTE_MIN_WIDTH, notePreview.width), height: Math.max(NOTE_MIN_HEIGHT, notePreview.height) }} />}
         {toolbarBounds && state.selection.length > 0 && <div className="selection-overlay" style={{ left: toolbarBounds.x, top: toolbarBounds.y, width: toolbarBounds.width, height: toolbarBounds.height }}>
-          {(selectedAssets.length > 0 || selectedNotes.length > 0) && (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeAnchor[]).map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
+          {(selectedAssets.length > 0 || selectedNotes.length > 0) && selectionResizeAnchors.map((anchor) => <button key={anchor} type="button" className={`resize-handle ${anchor}`} aria-label={`Resize selection ${anchor}`} onPointerDown={(event) => startAssetResize(event, anchor)} />)}
           <div className="selection-toolbar" style={{ transform: `translateX(-50%) scale(${1 / view.zoom})` }} onPointerDown={(event) => event.stopPropagation()}>
             <span className="selection-count">{state.selection.length} selected</span>
             {selectedBoards.length === 1 && <button type="button" onClick={() => void run({ type: "toggle-board-lock", id: selectedBoards[0].id })}><Icon name={selectedBoards[0].locked ? "unlock" : "lock"} size={15} />{selectedBoards[0].locked ? "Unlock" : "Lock"}</button>}
@@ -627,10 +633,13 @@ export function App() {
             {selectedAssets.length === 1 && <button type="button" onClick={() => void copyAssetToClipboard(selectedAssets[0])}><Icon name="copy" size={15} />Copy</button>}
             {selectedAssets.length === 1 && <button type="button" onClick={() => downloadAsset(selectedAssets[0])}><Icon name="download" size={15} />Download</button>}
             {selectedNotes.length === 1 && <>
-              <label className="note-style-field" title="Text color"><span>Text</span><input type="color" aria-label="Note text color" value={selectedNotes[0].textColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: selectedNotes[0].backgroundColor, textColor: event.target.value })} /></label>
-              <label className="note-style-field" title="Background color"><span>Fill</span><input type="color" aria-label="Note background color" value={selectedNotes[0].backgroundColor === "transparent" ? "#252525" : selectedNotes[0].backgroundColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: event.target.value, textColor: selectedNotes[0].textColor })} /></label>
-              <button type="button" className={selectedNotes[0].backgroundColor === "transparent" ? "is-toggle-active" : undefined} onClick={() => updateNoteStyle(selectedNotes[0], { fontSize: selectedNotes[0].fontSize, backgroundColor: selectedNotes[0].backgroundColor === "transparent" ? "#252525" : "transparent", textColor: selectedNotes[0].textColor })}>Transparent</button>
-              <label className="note-style-field note-font-size" title="Font size"><span>Size</span><input type="number" min="8" max="96" step="1" aria-label="Note font size" value={selectedNotes[0].fontSize} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: Number(event.target.value), backgroundColor: selectedNotes[0].backgroundColor, textColor: selectedNotes[0].textColor })} /></label>
+              <div className="note-align-controls" role="group" aria-label="Note text alignment">
+                {(["left", "center", "right"] as const).map((alignment) => <button key={alignment} type="button" className={selectedNotes[0].textAlign === alignment ? "is-toggle-active" : undefined} aria-label={`Align text ${alignment}`} aria-pressed={selectedNotes[0].textAlign === alignment} onClick={() => updateNoteStyle(selectedNotes[0], { textAlign: alignment })}><Icon name={`align-${alignment}`} size={13} /></button>)}
+              </div>
+              <label className="note-style-field" title="Text color"><span>Text</span><input type="color" aria-label="Note text color" value={selectedNotes[0].textColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { textColor: event.target.value })} /></label>
+              <label className="note-style-field" title="Background color"><span>Fill</span><input type="color" aria-label="Note background color" value={selectedNotes[0].backgroundColor === "transparent" ? "#252525" : selectedNotes[0].backgroundColor} onChange={(event) => updateNoteStyle(selectedNotes[0], { backgroundColor: event.target.value })} /></label>
+              <button type="button" className={selectedNotes[0].backgroundColor === "transparent" ? "is-toggle-active" : undefined} onClick={() => updateNoteStyle(selectedNotes[0], { backgroundColor: selectedNotes[0].backgroundColor === "transparent" ? "#252525" : "transparent" })}>Transparent</button>
+              <label className="note-style-field note-font-size" title="Font size"><span>Size</span><input type="number" min="8" max="96" step="1" aria-label="Note font size" value={selectedNotes[0].fontSize} onChange={(event) => updateNoteStyle(selectedNotes[0], { fontSize: Number(event.target.value) })} /></label>
             </>}
             {selectedAssets.length > 0 && <button type="button" onClick={openPreview}><Icon name="preview" size={15} />Preview</button>}
             {selectedAssets.length > 0 && <button type="button" onClick={() => run({ type: "duplicate-selection" })}><Icon name="duplicate" size={15} />Duplicate</button>}
