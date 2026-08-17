@@ -262,7 +262,7 @@ button { color: inherit; }
 .yt-surface-mobile-column .yt-list { max-width: 230px; }
 .yt-video-card { min-width: 0; }
 .yt-thumb { position: relative; overflow: hidden; aspect-ratio: 16 / 9; border-radius: 4px; background: #d5d5d5; }
-.yt-thumb.is-target { outline: 1px solid #7caeff; outline-offset: 2px; }
+.yt-thumb.is-target { outline: none; }
 .yt-thumb > img { width: 100%; height: 100%; display: block; object-fit: cover; }
 .yt-duration { position: absolute; right: 4px; bottom: 4px; padding: 2px 4px; border-radius: 2px; color: #fff; background: rgba(0,0,0,.82); font-size: 7px; font-variant-numeric: tabular-nums; }
 .yt-sample-thumbnail { position: relative; width: 100%; height: 100%; padding: 8px; display: flex; flex-direction: column; justify-content: center; color: #fff; background: #39495f; font-size: 10px; font-weight: 700; line-height: 11px; text-transform: uppercase; }

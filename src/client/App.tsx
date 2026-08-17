@@ -105,6 +105,7 @@ export function App() {
   const [carouselIndex, setCarouselIndex] = useState(0);
   const [youtubeTitle, setYoutubeTitle] = useState("");
   const [youtubeDark, setYoutubeDark] = useState(true);
+  const [youtubeSeed, setYoutubeSeed] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -227,6 +228,7 @@ export function App() {
   const selectedBoards = useMemo(() => state?.boards.filter((board) => state.selection.includes(board.id)) ?? [], [state]);
   const openPreview = useCallback(() => {
     setPreviewOpen(true);
+    setYoutubeSeed((current) => (current + 1 + Math.floor(Math.random() * 1000000)) >>> 0);
     setCarouselIndex(0);
     if (selectedAssets[0]) setYoutubeTitle(selectedAssets[0].name.replace(/\.[^.]+$/, ""));
   }, [selectedAssets]);
@@ -465,7 +467,7 @@ export function App() {
     </header>
 
     {libraryOpen && <AssetLibraryPanel assets={library} onInsert={(asset) => void insertFromLibrary(asset)} onClose={() => setLibraryOpen(false)} />}
-    {previewOpen && <PreviewPanel assets={selectedAssets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} youtubeTitle={youtubeTitle} youtubeDark={youtubeDark} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onYoutubeTitleChange={setYoutubeTitle} onYoutubeDarkChange={setYoutubeDark} onClose={() => setPreviewOpen(false)} />}
+    {previewOpen && <PreviewPanel assets={selectedAssets} mode={previewMode} device={previewDevice} carouselIndex={carouselIndex} youtubeTitle={youtubeTitle} youtubeDark={youtubeDark} youtubeSeed={youtubeSeed} onModeChange={(mode) => { setPreviewMode(mode); setCarouselIndex(0); }} onDeviceChange={setPreviewDevice} onCarouselIndexChange={setCarouselIndex} onYoutubeTitleChange={setYoutubeTitle} onYoutubeDarkChange={setYoutubeDark} onClose={() => setPreviewOpen(false)} />}
 
     <aside className="tool-rail" aria-label="Canvas tools">
       <div className="tool-rail-group">
