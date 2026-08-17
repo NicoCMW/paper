@@ -4,6 +4,7 @@ import type { Asset, Board, CanvasState, CanvasSummary, CornerResizeAnchor, Enti
 import { api, assetUrl } from "./api";
 import { AssetLibraryPanel, LIBRARY_ASSET_DRAG_MIME } from "./AssetLibraryPanel";
 import { PreviewPanel } from "./PreviewPanel";
+import { selectionBoundsFollowInteraction } from "./selection-geometry";
 
 type Tool = "select" | "pan" | "board" | "import" | "text";
 type PreviewMode = "youtube" | "carousel";
@@ -535,7 +536,7 @@ export function App() {
   const marquee = interaction?.kind === "marquee" ? normalizeRect(interaction.start, interaction.current) : null;
   const boardPreview = interaction?.kind === "board" ? normalizeRect(interaction.start, interaction.current) : null;
   const notePreview = interaction?.kind === "note" ? normalizeRect(interaction.start, interaction.current) : null;
-  const displayedSelectionBounds = interaction?.kind === "resize-assets" || interaction?.kind === "move"
+  const displayedSelectionBounds = selectionBoundsFollowInteraction(interaction?.kind)
     ? boundsOf([...selectedAssets.map((asset) => previewRect(asset)), ...selectedBoards.map((board) => previewRect(board)), ...selectedNotes.map((note) => previewRect(note))])
     : selectionBounds;
   const toolbarBounds = displayedSelectionBounds;

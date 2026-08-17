@@ -11,7 +11,7 @@ export type CornerResizeAnchor = Extract<ResizeAnchor, "top-left" | "top-right" 
 export type NoteTextAlign = "left" | "center" | "right";
 
 export const NOTE_MIN_WIDTH = 64;
-export const NOTE_MIN_HEIGHT = 36;
+export const NOTE_MIN_HEIGHT = 8;
 
 export type AssetOrigin = "imported" | "codex";
 

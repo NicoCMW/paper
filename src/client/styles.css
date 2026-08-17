@@ -83,7 +83,7 @@ button { color: inherit; }
 .asset.is-generated::after { content: ""; position: absolute; top: 5px; right: 5px; width: 5px; height: 5px; border-radius: 50%; background: #9fbeff; box-shadow: 0 0 0 2px rgba(45,45,45,.55); }
 .asset-selection-meta { position: absolute; left: 0; top: calc(100% + 6px); display: flex; align-items: center; gap: 8px; color: rgba(255,255,255,.72); font-size: 10px; line-height: 14px; white-space: nowrap; pointer-events: none; }
 .asset-selection-meta span + span { color: #7f7f7a; }
-.note { position: absolute; overflow: hidden; padding: 5px 8px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; color: #e4e4df; background: rgba(37,37,37,.96); cursor: grab; line-height: 1.45; white-space: pre; touch-action: none; transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease); }
+.note { position: absolute; overflow: hidden; padding: 2px 6px; border: 1px solid rgba(255,255,255,.16); border-radius: 6px; color: #e4e4df; background: rgba(37,37,37,.96); cursor: grab; line-height: 1.45; white-space: pre; touch-action: none; transition: border-color 120ms var(--ease), box-shadow 120ms var(--ease); }
 .note:active { cursor: grabbing; }
 .note:hover { border-color: rgba(255,255,255,.35); }
 .note.is-selected { border-color: var(--selection); box-shadow: 0 0 0 1px rgba(140,185,255,.2); }

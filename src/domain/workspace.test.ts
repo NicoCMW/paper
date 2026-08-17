@@ -112,7 +112,7 @@ describe("Canvas workspace", () => {
 
     workspace.dispatch({ type: "resize-note", id: "note-1", anchor: "right", dw: -300, dh: 0 });
     workspace.dispatch({ type: "resize-note", id: "note-1", anchor: "bottom", dw: 0, dh: -200 });
-    expect(workspace.getState().notes[0]).toMatchObject({ width: 64, height: 36 });
+    expect(workspace.getState().notes[0]).toMatchObject({ width: 64, height: 8 });
 
     workspace.dispatch({ type: "delete-selection" });
     expect(workspace.getState().notes).toHaveLength(0);
