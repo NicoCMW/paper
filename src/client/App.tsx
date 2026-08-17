@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type PointerEvent as ReactPointerEvent } from "react";
 import type { Asset, Board, CanvasState, CanvasSummary, EntityId, LibraryAsset, Point, Rect, WorkspaceCommand } from "../domain/model";
 import { api, assetUrl } from "./api";
-import { AssetLibraryPanel } from "./AssetLibraryPanel";
+import { AssetLibraryPanel, LIBRARY_ASSET_DRAG_MIME } from "./AssetLibraryPanel";
 import { PreviewPanel } from "./PreviewPanel";
 
 type Tool = "select" | "pan" | "board" | "import";
@@ -133,10 +133,10 @@ export function App() {
     }
   }, []);
 
-  const insertFromLibrary = useCallback(async (asset: LibraryAsset) => {
+  const insertFromLibrary = useCallback(async (asset: LibraryAsset, placement?: { x?: number; y?: number }) => {
     setError(null);
     try {
-      const next = await api.insertLibraryAsset(asset.id);
+      const next = await api.insertLibraryAsset(asset.id, placement);
       setState(next.state);
       setLibrary(next.assets);
       setCanvases(await api.canvases());
@@ -280,7 +280,7 @@ export function App() {
     }
     if (event.shiftKey) {
       if (isSelected) { void run({ type: "select", ids: [id], additive: true }); return; }
-      viewportRef.current?.setPointerCapture(event.pointerId);
+      event.currentTarget.setPointerCapture(event.pointerId);
       const ids = [...(state?.selection ?? []), id];
       setState((current) => current ? { ...current, selection: ids } : current);
       void run({ type: "select", ids });
@@ -288,7 +288,7 @@ export function App() {
       return;
     }
     const ids = isSelected ? (state?.selection ?? [id]) : [id];
-    viewportRef.current?.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture(event.pointerId);
     if (!isSelected) { setState((current) => current ? { ...current, selection: ids } : current); void run({ type: "select", ids }); }
     setInteraction({ kind: "move", pointerId: event.pointerId, start: toWorld(event), ids, dx: 0, dy: 0 });
   };
@@ -364,8 +364,22 @@ export function App() {
     setInteraction({ kind: "resize-board", pointerId: event.pointerId, boardId: board.id, anchor, start: toWorld(event), dw: 0, dh: 0 });
   };
 
+  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    if (event.dataTransfer.types.includes(LIBRARY_ASSET_DRAG_MIME)) event.dataTransfer.dropEffect = "copy";
+  };
+
   const handleDrop = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
+    const libraryAssetId = event.dataTransfer.getData(LIBRARY_ASSET_DRAG_MIME);
+    if (libraryAssetId) {
+      const asset = library.find((item) => item.id === libraryAssetId);
+      if (asset) {
+        const point = toWorld(event);
+        void insertFromLibrary(asset, { x: point.x - asset.width / 2, y: point.y - asset.height / 2 });
+      }
+      return;
+    }
     const files = [...event.dataTransfer.files];
     if (files.length) runImport(files, toWorld(event));
   };
@@ -483,7 +497,7 @@ export function App() {
       <div className="tool-rail-bottom"><span className="shortcut-hint">{spaceHeld ? "PAN" : "SPACE"}</span></div>
     </aside>
 
-    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
+    <div ref={viewportRef} className="canvas-viewport" onPointerDown={handlePointerDown} onPointerMove={handlePointerMove} onPointerUp={handlePointerUp} onPointerCancel={handlePointerUp} onDragOver={handleDragOver} onDrop={handleDrop}>
       <div className="world" style={{ width: WORLD_WIDTH, height: WORLD_HEIGHT, transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})` }}>
         {state.boards.map((board) => {
           const rect = previewRect(board);
