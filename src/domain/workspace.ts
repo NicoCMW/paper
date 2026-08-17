@@ -1,0 +1,241 @@
+import type { Asset, Board, CanvasState, EntityId, Rect, Workspace, WorkspaceCommand } from "./model";
+import { createInitialState } from "./model";
+
+type Snapshot = CanvasState;
+
+const clone = <T>(value: T): T => structuredClone(value);
+
+const contains = (outer: Rect, inner: Rect): boolean =>
+  inner.x >= outer.x &&
+  inner.y >= outer.y &&
+  inner.x + inner.width <= outer.x + outer.width &&
+  inner.y + inner.height <= outer.y + outer.height;
+
+const intersects = (a: Rect, b: Rect): boolean =>
+  a.x < b.x + b.width &&
+  a.x + a.width > b.x &&
+  a.y < b.y + b.height &&
+  a.y + a.height > b.y;
+
+const boundsOf = (assets: Asset[]): Rect => {
+  const left = Math.min(...assets.map((asset) => asset.x));
+  const top = Math.min(...assets.map((asset) => asset.y));
+  const right = Math.max(...assets.map((asset) => asset.x + asset.width));
+  const bottom = Math.max(...assets.map((asset) => asset.y + asset.height));
+  return { x: left, y: top, width: right - left, height: bottom - top };
+};
+
+const syncMembership = (state: CanvasState, asset: Asset): Asset => {
+  const board = state.boards.find((candidate) => contains(candidate, asset));
+  return { ...asset, parentBoardId: board?.id };
+};
+
+const selectIntersecting = (state: CanvasState, rect: Rect, additive: boolean): CanvasState => {
+  const hitIds = state.assets.filter((asset) => intersects(asset, rect)).map((asset) => asset.id);
+  const selection = additive
+    ? [...state.selection, ...hitIds.filter((id) => !state.selection.includes(id))]
+    : hitIds;
+  return { ...state, selection };
+};
+
+function applyCommand(previous: CanvasState, command: WorkspaceCommand): CanvasState {
+  switch (command.type) {
+    case "create-canvas":
+      return createInitialState(command.canvas);
+    case "import-asset":
+      return { ...previous, assets: [...previous.assets, command.asset], selection: [command.asset.id] };
+    case "select": {
+      const selection = command.additive
+        ? command.ids.reduce<EntityId[]>(
+            (result, id) => result.includes(id) ? result.filter((selected) => selected !== id) : [...result, id],
+            previous.selection,
+          )
+        : command.ids;
+      return { ...previous, selection };
+    }
+    case "select-rect":
+      return selectIntersecting(previous, command.rect, Boolean(command.additive));
+    case "move-asset": {
+      const assets = previous.assets.map((asset) =>
+        asset.id === command.id
+          ? syncMembership(previous, { ...asset, x: asset.x + command.dx, y: asset.y + command.dy })
+          : asset,
+      );
+      const boards = previous.boards.map((board) => ({
+        ...board,
+        memberAssetIds: assets.filter((asset) => asset.parentBoardId === board.id).map((asset) => asset.id),
+      }));
+      return { ...previous, assets, boards };
+    }
+    case "move-board": {
+      const board = previous.boards.find((candidate) => candidate.id === command.id);
+      if (!board) return previous;
+      const memberIds = new Set(board.memberAssetIds);
+      return {
+        ...previous,
+        boards: previous.boards.map((candidate) =>
+          candidate.id === command.id
+            ? { ...candidate, x: candidate.x + command.dx, y: candidate.y + command.dy }
+            : candidate,
+        ),
+        assets: previous.assets.map((asset) =>
+          memberIds.has(asset.id)
+            ? { ...asset, x: asset.x + command.dx, y: asset.y + command.dy }
+            : asset,
+        ),
+      };
+    }
+    case "move-selection": {
+      const selectedIds = new Set(previous.selection);
+      const selectedBoards = previous.boards.filter((board) => selectedIds.has(board.id));
+      const movedMemberIds = new Set(selectedBoards.flatMap((board) => board.memberAssetIds));
+      const movedAssets = previous.assets.map((asset) => {
+        if (!selectedIds.has(asset.id) && !movedMemberIds.has(asset.id)) return asset;
+        return { ...asset, x: asset.x + command.dx, y: asset.y + command.dy };
+      });
+      const boards = previous.boards.map((board) =>
+        selectedIds.has(board.id) ? { ...board, x: board.x + command.dx, y: board.y + command.dy } : board,
+      );
+      const movedState = { ...previous, assets: movedAssets, boards };
+      const assets = movedAssets.map((asset) =>
+        selectedIds.has(asset.id) ? syncMembership(movedState, asset) : asset,
+      );
+      const nextBoards = boards.map((board) => ({
+        ...board,
+        memberAssetIds: assets.filter((asset) => asset.parentBoardId === board.id).map((asset) => asset.id),
+      }));
+      return { ...previous, assets, boards: nextBoards };
+    }
+    case "resize-selection": {
+      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
+      if (selected.length === 0 || command.scale <= 0) return previous;
+      const bounds = boundsOf(selected);
+      const center = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      const assets = previous.assets.map((asset) => {
+        if (!previous.selection.includes(asset.id)) return asset;
+        const nextWidth = asset.width * command.scale;
+        const nextHeight = asset.height * command.scale;
+        return {
+          ...asset,
+          x: center.x + (asset.x + asset.width / 2 - center.x) * command.scale - nextWidth / 2,
+          y: center.y + (asset.y + asset.height / 2 - center.y) * command.scale - nextHeight / 2,
+          width: nextWidth,
+          height: nextHeight,
+        };
+      });
+      return { ...previous, assets };
+    }
+    case "resize-board": {
+      const board = previous.boards.find((candidate) => candidate.id === command.id);
+      if (!board) return previous;
+      const minWidth = 160;
+      const minHeight = 120;
+      let { x, y, width, height } = board;
+      if (command.anchor.includes("right")) width = Math.max(minWidth, width + command.dw);
+      if (command.anchor.includes("left")) {
+        const nextWidth = Math.max(minWidth, width - command.dw);
+        x += width - nextWidth;
+        width = nextWidth;
+      }
+      if (command.anchor.includes("bottom")) height = Math.max(minHeight, height + command.dh);
+      if (command.anchor.includes("top")) {
+        const nextHeight = Math.max(minHeight, height - command.dh);
+        y += height - nextHeight;
+        height = nextHeight;
+      }
+      return { ...previous, boards: previous.boards.map((candidate) => candidate.id === board.id ? { ...candidate, x, y, width, height } : candidate) };
+    }
+    case "create-board": {
+      const board: Board = {
+        id: crypto.randomUUID(),
+        title: command.title ?? "Untitled Board",
+        ...command.rect,
+        memberAssetIds: [],
+      };
+      return { ...previous, boards: [...previous.boards, board], selection: [board.id] };
+    }
+    case "update-board-title":
+      return { ...previous, boards: previous.boards.map((board) => board.id === command.id ? { ...board, title: command.title || "Untitled Board" } : board) };
+    case "create-board-from-selection": {
+      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
+      if (selected.length === 0) return previous;
+      const margin = 32;
+      const bounds = boundsOf(selected);
+      const board: Board = {
+        id: crypto.randomUUID(),
+        title: command.title ?? "Untitled Board",
+        x: bounds.x - margin,
+        y: bounds.y - margin,
+        width: bounds.width + margin * 2,
+        height: bounds.height + margin * 2,
+        memberAssetIds: selected.map((asset) => asset.id),
+      };
+      const assets = previous.assets.map((asset) =>
+        previous.selection.includes(asset.id) ? { ...asset, parentBoardId: board.id } : asset,
+      );
+      return { ...previous, assets, boards: [...previous.boards, board], selection: [board.id] };
+    }
+    case "group-selection": {
+      const ids = previous.selection.filter((id) => previous.assets.some((asset) => asset.id === id));
+      if (ids.length < 2) return previous;
+      return { ...previous, groups: { ...previous.groups, [crypto.randomUUID()]: ids } };
+    }
+    case "duplicate-selection": {
+      const selected = previous.assets.filter((asset) => previous.selection.includes(asset.id));
+      const duplicates = selected.map((asset) => ({ ...asset, id: crypto.randomUUID(), x: asset.x + 32, y: asset.y + 32 }));
+      return { ...previous, assets: [...previous.assets, ...duplicates], selection: duplicates.map((asset) => asset.id) };
+    }
+    case "delete-selection": {
+      const deleted = new Set(previous.selection);
+      return {
+        ...previous,
+        assets: previous.assets.filter((asset) => !deleted.has(asset.id)),
+        boards: previous.boards.filter((board) => !deleted.has(board.id)).map((board) => ({
+          ...board,
+          memberAssetIds: board.memberAssetIds.filter((id) => !deleted.has(id)),
+        })),
+        groups: Object.fromEntries(Object.entries(previous.groups).filter(([, ids]) => !ids.some((id) => deleted.has(id)))),
+        selection: [],
+      };
+    }
+  }
+}
+
+export function createWorkspace(initial: CanvasState = createInitialState()): Workspace {
+  let state = clone(initial);
+  let past: Snapshot[] = [];
+  let future: Snapshot[] = [];
+
+  const commit = (next: CanvasState): CanvasState => {
+    if (JSON.stringify(next) === JSON.stringify(state)) return state;
+    past = [...past, clone(state)];
+    future = [];
+    state = clone(next);
+    return clone(state);
+  };
+
+  return {
+    getState: () => clone(state),
+    dispatch: (command) => {
+      if (command.type === "select" || command.type === "select-rect") {
+        state = clone(applyCommand(state, command));
+        return clone(state);
+      }
+      return commit(applyCommand(state, command));
+    },
+    undo: () => {
+      const previous = past.pop();
+      if (!previous) return clone(state);
+      future = [clone(state), ...future];
+      state = previous;
+      return clone(state);
+    },
+    redo: () => {
+      const next = future.shift();
+      if (!next) return clone(state);
+      past = [...past, clone(state)];
+      state = next;
+      return clone(state);
+    },
+  };
+}

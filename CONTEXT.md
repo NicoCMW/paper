@@ -59,3 +59,99 @@ _Avoid_: API call
 **Generated Asset**:
 An Asset produced by Codex from one or more selected Reference images and an instruction supplied in the Codex conversation.
 _Avoid_: export
+
+**Board**:
+A titled white spatial container inside a Canvas for arranging related Assets. A Board is a visual container, not a Selection or a Group; its Assets remain individually movable.
+_Avoid_: group, campaign, camba
+
+**Marquee selection**:
+A rectangular Selection created by dragging over empty Canvas space; it selects the Assets intersecting the rectangle.
+_Avoid_: lasso
+
+**Canvas pan**:
+Moving the visible viewport over the Canvas without moving Assets. It is performed with the hand tool or by holding Space while dragging.
+_Avoid_: moving the Canvas
+
+**Asset resize**:
+Changing an Asset's displayed dimensions through its corner handles while preserving its aspect ratio by default.
+_Avoid_: crop
+
+**Canvas switcher**:
+The top-left control used to change between named Canvas workspaces and create, rename, or delete them.
+_Avoid_: project selector
+
+**Board creation**:
+A Board is created by dragging the Board tool across the Canvas to define its size. A newly created Board has a white surface and an editable initial title.
+_Avoid_: auto-generated group
+
+**Board membership**:
+An Asset belongs to a Board when it is placed inside that Board. Moving a Board moves its member Assets; moving an Asset out removes membership; moving an Asset into a Board adds membership. Boards do not auto-layout or clip their Assets.
+_Avoid_: layer, folder
+
+**Board title**:
+The visible title of a Board is edited in place by double-clicking it.
+_Avoid_: metadata label
+
+**Selection toolbar**:
+A compact floating action bar shown for a non-empty Selection. It exposes Group, Create Board, Duplicate, and Delete; it does not contain a Codex text composer in this iteration.
+_Avoid_: prompt bar
+
+**Multi-selection movement**:
+Moving a Multi-selection translates all selected Assets together while preserving their relative distances.
+_Avoid_: batch move
+
+**Multi-Asset resize**:
+Resizing a Multi-selection is part of the current iteration. The selection scales as one spatial arrangement from its geometric center; relative distances and individual image proportions remain preserved.
+_Avoid_: batch crop
+
+**Board resize**:
+Resizing a Board changes only the Board's boundary. Its member Assets keep their displayed dimensions and positions.
+_Avoid_: scale contents
+
+**Board and Asset targeting**:
+Clicking an Asset targets that Asset. Clicking empty space inside a Board targets the Board. Moving a Board moves its member Assets; moving an Asset moves only that Asset.
+_Avoid_: nested selection ambiguity
+
+**Selection-to-Board**:
+Create Board from a Multi-selection creates a Board around the selected Assets with an interior margin and makes them Board members.
+_Avoid_: wrapping group
+
+**Toolbar iconography**:
+The left toolbar uses icons without persistent labels. Tooltips appear on hover, and the active tool has a subtle highlighted surface.
+_Avoid_: labeled toolbar
+
+**Contextual controls**:
+The Canvas has no permanent right panel. Selection actions and Asset or Board details appear close to the relevant selection only when needed.
+_Avoid_: inspector sidebar
+
+**Asset selection appearance**:
+Selected Assets use a thin light-blue outline without a fill or shadow. Multi-selection uses the same outline with slightly stronger emphasis.
+_Avoid_: selected card chrome
+
+**Board appearance**:
+A Board uses a white surface, a small corner radius, and a light title placed above the Board. It remains visually simple and does not use decorative effects.
+_Avoid_: glass panel
+
+**Asset appearance**:
+An Asset displays its image without a permanent card or label. Its name and dimensions appear on hover or while selected.
+_Avoid_: thumbnail card
+
+**Canvas switcher appearance**:
+The Canvas switcher is a compact dark capsule in the top-left, showing the current Canvas name and an icon that opens the Canvas menu.
+_Avoid_: project sidebar
+
+**Canvas empty state**:
+An empty Canvas shows a discreet centered `Drop images here` hint with a secondary clipboard-paste hint.
+_Avoid_: onboarding screen
+
+**Zoom controls**:
+The Canvas exposes the current zoom percentage with plus, minus, and Fit controls in the top-right area. Zoom is centered around the pointer position.
+_Avoid_: zoom panel
+
+**Layer order**:
+When Assets overlap, the most recently created or moved Asset is visually in front. Explicit layer controls are not part of the current iteration.
+_Avoid_: z-index control
+
+**Canvas surface**:
+The Canvas uses a flat dark-gray surface without a visible grid. Zoom controls and the current zoom percentage live in the top-right area.
+_Avoid_: infinite grid

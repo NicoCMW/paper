@@ -1,0 +1,29 @@
+{
+  "name": "codex-canvas",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:server\" \"npm:dev:web\"",
+    "dev:server": "tsx src/server/main.ts",
+    "dev:web": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "concurrently": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "tsx": "latest",
+    "vite": "latest"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "typescript": "latest",
+    "vitest": "latest"
+  }
+}
