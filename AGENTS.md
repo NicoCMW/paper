@@ -33,3 +33,7 @@ Use the canonical labels `needs-triage`, `needs-info`, `ready-for-agent`, `ready
 ### Domain docs
 
 This is a single-context repository with a root `CONTEXT.md` and `docs/adr/`. See `docs/agents/domain.md`.
+
+### Codex Canvas operation
+
+When a task mentions selected Canvas Assets, image references, Codex generation, or returning an image to the Canvas, use `.agents/skills/canvas-codex/SKILL.md`. The skill defines the MCP preflight and the required read-generate-receive-verify sequence; do not substitute manual ChatGPT attachments when the local MCP is available.

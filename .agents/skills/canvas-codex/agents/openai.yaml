@@ -1,0 +1,13 @@
+interface:
+  display_name: "Canvas Codex"
+  short_description: "Use Codex with the local visual Canvas"
+  default_prompt: "Use $canvas-codex to work with the local Canvas and its selected image Assets."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "codex-canvas-prototype"
+      description: "Local Codex Canvas MCP server"
+      transport: "streamable_http"
+      url: "http://127.0.0.1:29980/mcp"
+policy:
+  allow_implicit_invocation: true
