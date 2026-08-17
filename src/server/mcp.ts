@@ -4,6 +4,9 @@ import { LocalWorkspaceStore } from "./storage";
 
 type JsonRpcRequest = { id?: number | string; method: string; params?: Record<string, unknown> };
 
+const DEFAULT_PROTOCOL_VERSION = "2025-03-26";
+const SUPPORTED_PROTOCOL_VERSIONS = new Set(["2025-03-26", "2025-11-25", "2024-11-05"]);
+
 const json = (value: unknown) => JSON.stringify(value);
 
 const success = (id: number | string | undefined, result: unknown) => ({ jsonrpc: "2.0", id: id ?? null, result });
@@ -47,7 +50,11 @@ export class CanvasMcpAdapter {
   constructor(private readonly workspace: Workspace, private readonly store: LocalWorkspaceStore) {}
 
   async call(request: JsonRpcRequest) {
-    if (request.method === "initialize") return success(request.id, { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "codex-canvas", version: "0.1.0" } });
+    if (request.method === "initialize") {
+      const requested = String(request.params?.protocolVersion ?? "");
+      const protocolVersion = SUPPORTED_PROTOCOL_VERSIONS.has(requested) ? requested : DEFAULT_PROTOCOL_VERSION;
+      return success(request.id, { protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "codex-canvas", version: "0.1.0" }, instructions: "Use canvas_get_selection to read the selected local image Assets before generating or transforming an image." });
+    }
     if (request.method === "notifications/initialized") return undefined;
     if (request.method === "tools/list") return success(request.id, { tools });
     if (request.method !== "tools/call") return failure(request.id, `Unsupported MCP method: ${request.method}`);

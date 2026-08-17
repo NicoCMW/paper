@@ -27,6 +27,14 @@ const sendText = (response: ServerResponse, status: number, value: string, conte
   response.end(value);
 };
 
+const sendMcpResponse = (response: ServerResponse, value: unknown) => {
+  if (value === undefined) {
+    response.writeHead(202, { "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+    return response.end();
+  }
+  return sendJson(response, 200, value);
+};
+
 const requestUrl = (request: IncomingMessage) => new URL(request.url ?? "/", `http://${request.headers.host ?? "127.0.0.1"}`);
 
 const server = createServer(async (request, response) => {
@@ -52,7 +60,11 @@ const server = createServer(async (request, response) => {
     }
     if (url.pathname === "/api/undo" && request.method === "POST") { const next = workspace.undo(); await store.save(next); return sendJson(response, 200, next); }
     if (url.pathname === "/api/redo" && request.method === "POST") { const next = workspace.redo(); await store.save(next); return sendJson(response, 200, next); }
-    if (url.pathname === "/mcp" && request.method === "POST") return sendJson(response, 200, await mcp.call(await readJson(request) as never));
+    if (url.pathname === "/mcp" && request.method === "GET") {
+      response.writeHead(405, { Allow: "POST", "Cache-Control": "no-store", "Access-Control-Allow-Origin": "*" });
+      return response.end();
+    }
+    if (url.pathname === "/mcp" && request.method === "POST") return sendMcpResponse(response, await mcp.call(await readJson(request) as never));
     if (url.pathname.startsWith("/assets/") && request.method === "GET") {
       const relativePath = `assets/${url.pathname.slice("/assets/".length)}`;
       const content = await store.readAsset(relativePath);
